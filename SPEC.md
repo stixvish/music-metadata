@@ -281,6 +281,46 @@ mis-selection `/url` avoids by resolving identity rather than guessing it.
 fingerprinting stays documented as the fallback for audio that `/url` cannot
 resolve.
 
+**F20 — premium audio needs cookies exported from an abandoned session.**
+the operator holds youtube premium. measured today, the best audio offered was
+**opus 151 kbps (itag 251)**; the existing `.staging` files are **AAC-LC 257
+kbps, 44.1 kHz (itag 141)**. so premium audio *was* reaching the old pipeline
+and is not reaching a fresh one.
+
+the cause is not the subscription and not the profile. run without
+`--no-warnings`, yt-dlp says so directly:
+
+```
+WARNING: [youtube] The provided YouTube account cookies are no longer valid.
+They have likely been rotated in the browser as a security measure.
+```
+
+**youtube rotates account cookies on any open browser tab**, which silently
+invalidates an exported set — including one whose expiry timestamps still look
+live (the stored `youtube-cookies.txt` showed 50 live, 0 expired, with `SID`,
+`SAPISID` and `__Secure-1PSID` all present, and was still rejected).
+
+`--cookies-from-browser chrome` **cannot fix this**, because the regular profile
+is exactly the session youtube keeps rotating. the documented procedure
+([yt-dlp wiki, checked 2026-09-14](https://github.com/yt-dlp/yt-dlp/wiki/Extractors#exporting-youtube-cookies))
+is to export from a session that is then never used again:
+
+1. open a **private/incognito** window and log into youtube
+2. navigate that tab to `youtube.com/robots.txt`
+3. ensure it is the **only** incognito tab open
+4. export `youtube.com` cookies to `~/.config/musicpipeline/youtube-cookies.txt`
+5. **close the incognito window immediately**
+
+**operational consequence:** cookie validity is a *runtime precondition*, not a
+setup step. `acquire` must probe for a premium format before downloading a batch
+and **fail loudly** when premium audio is absent, rather than silently
+collecting 151 kbps opus into a library that is supposed to be 257 kbps AAC.
+that silent degradation is precisely what produced the format mismatch observed
+here.
+
+a caveat worth recording: the same wiki warns that using a personal account with
+yt-dlp carries a ban risk.
+
 **F8 — rate limits are gentler in practice than documented.**
 published Starter is 6 req/min ([musicfetch.io](https://musicfetch.io/) pricing,
 checked 2026-09-14). measured: **20 sequential requests at 1 req/s, all HTTP
@@ -492,6 +532,12 @@ second architecture.
 resolves the **55 no-ISRC library files** and the **7 beatport WAVs** (§11).
 they stay out of v1 by sequencing, not because they need different tooling.
 
+**gate G8 — acquisition audio quality.** before any batch, `acquire` probes one
+track and asserts a premium audio format is offered (itag 141 AAC 256k, or 774
+opus 256k). if only 130k AAC / 151k opus is available the run **aborts with the
+cookie-refresh procedure** (F20) rather than downloading. quality degradation
+must never be silent.
+
 **gate G7 — acquisition identity.** a downloaded track is only admitted to the
 library once it carries an ISRC *and* that ISRC's resolved duration is within
 ±5s of the downloaded audio. a `/url` result that disagrees on duration is a
@@ -499,7 +545,8 @@ wrong match, and youtube is full of edits, sped-up versions and live cuts that
 resolve confidently to the studio recording. measured baseline: 8/8 resolved.
 
 **OQ-6 — lossy source, lossless container.** the source is **AAC at ~257 kbps**
-(measured across `.staging`); the library is AIFF. the conversion costs **5.4×**
+(measured across `.staging`, and reachable only with valid premium cookies —
+F20); the library is AIFF. the conversion costs **5.4×**
 storage — 9.5 GB → 51.9 GB measured — and **adds no quality**, since nothing is
 recoverable that the AAC encoder discarded. the existing 1,494 files are already
 converted and are not in scope to revisit. the open question is **new**
