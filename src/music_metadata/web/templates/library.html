@@ -1,0 +1,26 @@
+{% extends "base.html" %} {% block title %}library · music-metadata{% endblock %}
+{% block content %}
+    <h1>library</h1>
+    {% if files %}
+        <table>
+            <thead>
+                <tr>
+                    <th>file</th>
+                    <th>ISRC</th>
+                    <th>duration</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for f in files %}
+                    <tr>
+                        <td>{{ f.path }}</td>
+                        <td>{{ f.isrc_from_tag or "" }}</td>
+                        <td>{{ "%.1f"|format(f.duration_s) }}s</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <p class="empty">no tracks yet — run <code>music-metadata probe</code>.</p>
+    {% endif %}
+{% endblock %}

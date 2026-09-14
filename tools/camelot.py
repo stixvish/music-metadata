@@ -10,22 +10,26 @@ nA and nB share the same seven notes. Anchors verified against published
 charts: 1A = A-flat minor, 1B = B major, 8A = A minor, 8B = C major.
 """
 
+# fmt: off
+# the alignment is the wheel: reading down a column walks the circle of fifths.
+# one entry per line is what the formatter wants and it destroys that.
 # major keys in circle-of-fifths order starting at 8B = C major.
 _MAJOR_BY_NUMBER = {
-  8: "C", 9: "G", 10: "D", 11: "A", 12: "E", 1: "B",
-  2: "F#", 3: "Db", 4: "Ab", 5: "Eb", 6: "Bb", 7: "F",
+  8: "C",  9: "G",  10: "D",  11: "A",  12: "E",  1: "B",
+  2: "F#", 3: "Db", 4:  "Ab", 5:  "Eb", 6:  "Bb", 7: "F",
 }
 # each number's relative minor (the major's sixth degree).
 _MINOR_BY_NUMBER = {
-  8: "A", 9: "E", 10: "B", 11: "F#", 12: "Db", 1: "Ab",
-  2: "Eb", 3: "Bb", 4: "F", 5: "C", 6: "G", 7: "D",
+  8: "A",  9: "E",  10: "B",  11: "F#", 12: "Db", 1: "Ab",
+  2: "Eb", 3: "Bb", 4:  "F",  5:  "C",  6:  "G",  7: "D",
 }
 
 # enharmonic spellings normalised to the ones used above.
 _ENHARMONIC = {
   "C#": "Db", "D#": "Eb", "G#": "Ab", "A#": "Bb", "Gb": "F#",
-  "Cb": "B", "B#": "C", "Fb": "E", "E#": "F",
+  "Cb": "B",  "B#": "C",  "Fb": "E",  "E#": "F",
 }
+# fmt: on
 
 
 def _build() -> dict[tuple[str, str], str]:
@@ -71,14 +75,28 @@ if __name__ == "__main__":
   # every key Beatport returned during spec research, plus both anchors
   # and every enharmonic spelling.
   cases = [
-    ("Eb Minor", "2A"), ("B Minor", "10A"), ("Ab Minor", "1A"),
-    ("Db Major", "3B"), ("D Major", "10B"), ("E Major", "12B"),
-    ("C Minor", "5A"), ("B Major", "1B"), ("G Minor", "6A"),
-    ("A Minor", "8A"), ("C Major", "8B"),
-    ("D# Minor", "2A"), ("G# Minor", "1A"), ("C# Major", "3B"),
-    ("Gb Major", "2B"), ("A# Minor", "3A"),
-    ("f# minor", "11A"), ("F MAJOR", "7B"), ("Bb maj", "6B"),
-    ("", None), ("nonsense", None), ("H Minor", None),
+    ("Eb Minor", "2A"),
+    ("B Minor", "10A"),
+    ("Ab Minor", "1A"),
+    ("Db Major", "3B"),
+    ("D Major", "10B"),
+    ("E Major", "12B"),
+    ("C Minor", "5A"),
+    ("B Major", "1B"),
+    ("G Minor", "6A"),
+    ("A Minor", "8A"),
+    ("C Major", "8B"),
+    ("D# Minor", "2A"),
+    ("G# Minor", "1A"),
+    ("C# Major", "3B"),
+    ("Gb Major", "2B"),
+    ("A# Minor", "3A"),
+    ("f# minor", "11A"),
+    ("F MAJOR", "7B"),
+    ("Bb maj", "6B"),
+    ("", None),
+    ("nonsense", None),
+    ("H Minor", None),
   ]
   bad = 0
   for given, want in cases:
@@ -88,6 +106,10 @@ if __name__ == "__main__":
     print(f"  {'ok ' if ok else 'FAIL'}  {given!r:<14} -> {got!r:<6} (want {want!r})")
   # every code must be unique and all 24 must be covered
   codes = sorted(_TABLE.values())
-  print(f"\n  codes: {len(codes)} unique={len(set(codes))==24} covered={set(codes)==set(f'{n}{l}' for n in range(1,13) for l in 'AB')}")
+  every = {f"{n}{mode}" for n in range(1, 13) for mode in "AB"}
+  print(
+    f"\n  codes: {len(codes)} unique={len(set(codes)) == 24} "
+    f"covered={set(codes) == every}"
+  )
   print("  FAILURES:", bad)
   raise SystemExit(1 if bad else 0)

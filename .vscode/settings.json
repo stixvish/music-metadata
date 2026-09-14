@@ -35,7 +35,10 @@
   "evenBetterToml.formatter.alignEntries": true,
   "evenBetterToml.schema.enabled": true,
 
-  "files.associations": { "*.toml": "toml", "**/templates/*.html": "jinja-html" },
+  "files.associations": {
+    "*.toml": "toml",
+    "**/templates/*.html": "jinja-html"
+  },
 
   "files.exclude": {
     "**/__pycache__": true,

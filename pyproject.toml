@@ -1,0 +1,105 @@
+[project]
+name = "music-metadata"
+version = "0.1.0"
+description = "resolve DJ library metadata from ISRC through free APIs, write a tagged copy"
+requires-python = ">=3.12"
+dependencies = [
+  "mutagen>=1.47",
+  "httpx>=0.28",
+  "pydantic>=2.0",
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.32",
+  "jinja2>=3.1",
+]
+
+[project.scripts]
+music-metadata = "music_metadata.cli:main"
+
+[dependency-groups]
+dev = [
+  "ruff>=0.8",
+  "mypy>=1.13",
+  "pytest>=8.0",
+  "pytest-cov>=6.0",
+  "djlint>=1.36",
+]
+
+[build-system]
+requires      = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/music_metadata"]
+# schema.sql must ship inside the wheel, not merely sit in the source tree.
+artifacts = ["src/music_metadata/schema.sql"]
+
+# --- style: google python style guide, 2-space indent (CLAUDE.md) -------------
+
+[tool.ruff]
+indent-width   = 2
+line-length    = 88
+src            = ["src", "tests"]
+target-version = "py312"
+
+[tool.ruff.lint]
+select = [
+  "E",
+  "W",
+  "F",
+  "I",
+  "N",
+  "D",
+  "UP",
+  "B",
+  "A",
+  "C4",
+  "RET",
+  "SIM",
+  "ARG",
+  "PTH",
+  "ANN",
+  "S",
+  "T20",
+]
+ignore = ["D203", "D213"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+# asserts and undocumented fixtures are fine in tests
+"tests/*" = ["D", "ANN", "S101"]
+# tools/ holds standalone operator scripts, not library code. CLAUDE.md scopes
+# T20 to src/ precisely because the CLI there writes through an output module;
+# these scripts print as their entire interface. their subprocess calls pass
+# argument lists of literals, which is what S603/S607 exist to require.
+"tools/*" = ["T20", "ANN", "D", "S603", "S607"]
+
+[tool.ruff.format]
+indent-style = "space"
+quote-style  = "double"
+
+[tool.mypy]
+python_version = "3.12"
+strict         = true
+files          = ["src"]
+
+# these ship no type stubs
+[[tool.mypy.overrides]]
+module                 = ["mutagen.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# `live` hits real apis; excluded from every ordinary run (SPEC.md §12).
+addopts = "-m 'not live'"
+markers = [
+  "live: hits the real apis. excluded from the default run (SPEC.md §12)",
+  "slow: seconds, not milliseconds",
+]
+
+[tool.coverage.report]
+# the pure modules carry the decisions the spec argued hardest about, so they
+# are held to a hard bar. each is added here as it is built (tasks/todo.md).
+include    = ["src/music_metadata/output.py"]
+fail_under = 90

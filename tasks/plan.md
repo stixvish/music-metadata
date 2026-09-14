@@ -59,7 +59,7 @@ rather than paper over them.
 
 ## dependency graph
 
-```
+```text
         ┌─────────────────────────────────────────────┐
         │ M0  scaffold · store.py · output.py · web   │
         └───────────────────┬─────────────────────────┘
@@ -185,7 +185,7 @@ ISRC always equals the file's own**; adopting beatport's is a correctness
 failure, not a metadata improvement.
 
 §5 says tier 3 is the component most likely to break and the one nothing depends
-on. *test that claim:* a run with beatport disabled must complete, with genre
+on. _test that claim:_ a run with beatport disabled must complete, with genre
 falling back to discogs and then itunes.
 
 > **checkpoint 4.** G3 class fractions reported. a beatport-disabled run
@@ -226,7 +226,7 @@ without network at 90% coverage.
 **per milestone, before the pr:** `README.md` is updated in the same pr, stating
 what exists and runs **today** — never what is planned (`CLAUDE.md`, working
 agreements). a README describing unbuilt features is read as a status report and
-lies. then the seven checks of `CLAUDE.md` in order —
+lies. then the eight checks of `CLAUDE.md` in order —
 `ruff format --check .` · `ruff check .` · `taplo fmt --check .` · `djlint` ·
 `prettier --check` · `mypy src/` · `pytest -q`. **never silence a check to get to
 green**; a `# noqa` or a skip added to make a commit pass is a defect, not a fix.

@@ -1,0 +1,5 @@
+# third-party skill definitions, not ours to format
+.claude/
+.venv/
+uv.lock
+cache/
