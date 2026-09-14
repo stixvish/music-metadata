@@ -18,22 +18,22 @@ it is not optional.
 
 branch `feat/foundation`
 
-- [ ] **0.1 install the missing formatters.** `taplo`, `djlint`, `prettier` and `markdownlint-cli2`
+- [x] **0.1 install the missing formatters.** `taplo`, `djlint`, `prettier` and `markdownlint-cli2`
       are in `CLAUDE.md`'s check gate and are not installed on this machine.
       **verify:** all eight checks run and report, even on an empty tree.
-- [ ] **0.2 `pyproject.toml` and the `uv` project.** python ≥3.12. runtime deps
+- [x] **0.2 `pyproject.toml` and the `uv` project.** python ≥3.12. runtime deps
       `mutagen`, `httpx`, `pydantic>=2`, `fastapi`, `uvicorn`, `jinja2`; dev deps
       `ruff`, `mypy`, `pytest`, `pytest-cov`. ruff and mypy config copied from
       `CLAUDE.md` verbatim — 2-space indent, 88 cols, the full `select` list
       including `ANN`, `S` and `T20`, `mypy` strict on `src/`.
       **verify:** `uv sync` succeeds · `ruff check .` and `mypy src/` both pass.
-- [ ] **0.3 `lefthook.yml`.** the seven checks in `CLAUDE.md`'s stated order, all
+- [x] **0.3 `lefthook.yml`.** the eight checks in `CLAUDE.md`'s stated order, all
       blocking on commit.
       **verify:** a commit with a deliberate format error is rejected.
-- [ ] **0.4 `src/music_metadata/output.py`** — the single output module. `T20`
+- [x] **0.4 `src/music_metadata/output.py`** — the single output module. `T20`
       bans `print` in `src/` so the web ui can capture the same messages (§14).
       **verify:** a unit test captures emitted messages without stdout.
-- [ ] **0.5 `store.py` and `schema.sql`** — the six tables of §9a: `files`,
+- [x] **0.5 `store.py` and `schema.sql`** — the six tables of §9a: `files`,
       `recordings`, `service_ids`, `fingerprints`, `artwork`, `jobs`. unique
       indexes on `audio_md5` and on `isrc` (§11a depends on them). **raw response
       columns from day one** — §9a calls this the load-bearing decision, and
@@ -41,12 +41,15 @@ branch `feat/foundation`
       `source_version` on `recordings`.
       **verify:** round-trip test writes and reads a raw payload · the unique
       index rejects a duplicate md5.
-- [ ] **0.6 `web/app.py`, `web/jobs.py`, templates and static.** fastapi, jinja2,
+- [x] **0.6 `web/app.py`, templates and static.** fastapi, jinja2,
       htmx and alpine from a CDN, binding localhost with no auth. four routes
       stubbed (library, review, acquire, diff); library renders an empty table.
       **verify:** `uvicorn` serves the library screen · a `jobs` row can be
       written and polled through `/jobs/{id}` · `djlint` passes on templates.
-- [ ] **0.7 create `README.md`.** it does not exist yet. what the project does,
+      **note:** `web/jobs.py` (background _execution_) is deliberately not here
+      — nothing long-running exists to run yet. it lands with 1.10, which is
+      the first task that actually needs a job in flight.
+- [x] **0.7 create `README.md`.** it does not exist yet. what the project does,
       prerequisites (`uv`, `ffmpeg`, the `.env` keys actually needed), install,
       how to start the web ui, and an explicit "what is not built yet" section.
       **no command is listed that does not work.**
@@ -109,8 +112,8 @@ works end to end.**
       `map` with the §9c view flags.
       **verify:** `music-metadata map --missing beatport` renders TSV · `diff`
       shows old → new per field.
-- [ ] **1.10 web — library screen over real rows**, and `resolve` as a background
-      job with polled progress.
+- [ ] **1.10 `web/jobs.py` — background execution**, and the library screen over
+      real rows, with `resolve` running as a job and progress polled.
       **verify:** a 20-track resolve runs from the browser and progress advances
       without holding an HTTP request open.
 - [ ] **1.11 update `README.md`.** add `probe`, `resolve --limit N`, `diff`,
