@@ -1,0 +1,7 @@
+<div class="job"
+     {% if not finished %} hx-get="/jobs/{{ job.id }}" hx-trigger="every 2s" hx-swap="outerHTML" {% endif %}>
+    <span class="state">{{ job.state }}</span>
+    <progress value="{{ job.progress }}" max="1"></progress>
+    <span class="pct">{{ (job.progress * 100) | round | int }}%</span>
+    {% if job.error %}<span class="error">{{ job.error }}</span>{% endif %}
+</div>

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -51,6 +52,10 @@ class Store:
       conn: a connection whose row factory yields mappings.
     """
     self.conn = conn
+    # fastapi runs sync route handlers in a threadpool, so the connection is
+    # touched from more than one thread. sqlite allows that only with
+    # check_same_thread=False, and only one statement at a time — hence the lock.
+    self._lock = threading.Lock()
 
   @classmethod
   @contextmanager
@@ -65,7 +70,7 @@ class Store:
     """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(path)
+    conn = sqlite3.connect(path, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     # foreign keys are off by default in sqlite and silently ignore violations.
     conn.execute("PRAGMA foreign_keys = ON")
@@ -85,8 +90,9 @@ class Store:
       sql: the statement.
       params: bound parameters.
     """
-    self.conn.execute(sql, params)
-    self.conn.commit()
+    with self._lock:
+      self.conn.execute(sql, params)
+      self.conn.commit()
 
   def query(self, sql: str, params: tuple[Any, ...] = ()) -> list[sqlite3.Row]:
     """Run a query.
@@ -98,7 +104,8 @@ class Store:
     Returns:
       Every matching row.
     """
-    return self.conn.execute(sql, params).fetchall()
+    with self._lock:
+      return self.conn.execute(sql, params).fetchall()
 
   # --- files -----------------------------------------------------------------
 
@@ -317,9 +324,10 @@ class Store:
     Returns:
       The new job's id.
     """
-    cur = self.conn.execute("INSERT INTO jobs (kind) VALUES (?)", (kind,))
-    self.conn.commit()
-    return int(cur.lastrowid or 0)
+    with self._lock:
+      cur = self.conn.execute("INSERT INTO jobs (kind) VALUES (?)", (kind,))
+      self.conn.commit()
+      return int(cur.lastrowid or 0)
 
   def update_job(
     self,
