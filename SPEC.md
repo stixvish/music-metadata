@@ -978,6 +978,51 @@ two separate problems with `bestaudio`:
 consistency with the existing library; fall back to premium opus; **fail loudly**
 if neither is offered rather than accepting 151k.
 
+**F49 — opus 293k carries no information the AAC 258k lacks.** measured on the
+same track, both premium formats downloaded and compared by band energy (RMS dB,
+both resampled to 48 kHz):
+
+| band (Hz) | AAC 141 | OPUS 774 | delta |
+|---|---|---|---|
+| 14000-16000 | -46.8 | -46.7 | +0.1 |
+| 16000-18000 | -48.9 | -48.7 | +0.2 |
+| 18000-19000 | -53.1 | -53.0 | +0.1 |
+| 19500-20000 | -57.0 | -57.5 | **-0.5** |
+| 20000-21000 | -57.0 | -58.7 | **-1.7** |
+| 21000-22000 | -61.4 | -66.0 | **-4.6** |
+
+**opus has *less* high-frequency energy, not more.** and above AAC's 22.05 kHz
+nyquist — where opus at 48 kHz could hold content AAC physically cannot — there
+is nothing:
+
+```
+OPUS 22050-23000 Hz : -79.9 dB     ← filter skirt, 53 dB below the music
+OPUS 23000-23900 Hz : -103.0 dB    ← silence
+   (reference, 1000-2000 Hz: opus -27.0, aac -27.0 — identical)
+```
+
+so the higher bitrate reflects **opus's different encoding, not more
+information**. the two are within 0.2 dB across the entire audible band.
+
+**decision: stay on AAC (itag 141) for new downloads.** four reasons, in order of
+weight:
+
+1. **no measurable quality advantage to opus** — the above.
+2. **consistency.** the existing 1,494 files are AAC 257k and reproduce
+   byte-identically (F20). mixing source codecs makes the library
+   inhomogeneous for no gain.
+3. **DJ-app compatibility.** rekordbox and serato handle AAC natively; opus
+   support is inconsistent.
+4. **the container is moot anyway.** both are converted to AIFF (OQ-6), and AIFF
+   preserves whatever the lossy decode produced — **neither format is "upscaled"
+   by the conversion**, and neither recovers anything the encoder discarded.
+
+`774` stays as the fallback in `-f 141/774` (F48): premium opus is far better
+than the 151k non-premium alternative if AAC is ever unavailable.
+
+*measured on one track. the finding is a decision input, not a claim about every
+encode on youtube.*
+
 **F8 — rate limits are gentler in practice than documented.**
 published Starter is 6 req/min ([musicfetch.io](https://musicfetch.io/) pricing,
 checked 2026-09-14). measured: **20 sequential requests at 1 req/s, all HTTP
@@ -1832,8 +1877,24 @@ the operator holds youtube premium, and **premium audio is the difference betwee
 itag 141 (AAC 256k) and itag 251 (opus 151k)** — the entire quality basis of the
 library (F20).
 
-**where cookies come from.** yt-dlp reads chrome's cookie store directly; there
-is no export step in the normal path:
+**cookies are read fresh from chrome on every single run — there is no export
+step and no snapshot to go stale.** `--cookies-from-browser` opens chrome's
+cookie database at the moment of use, so whatever is current is what gets used.
+manual extraction to a file would be strictly worse: a file is a point-in-time
+copy that youtube's rotation invalidates without telling anyone, which is exactly
+the failure that produced F20.
+
+**the assurance is the live probe, not the extraction method.** G8 runs
+`yt_cookies.py check` against the real API before every batch, so validity is
+established by *observing a premium itag being offered*, not by assuming a file
+is good. a file-based flow would still need that same probe — it just adds a
+staleness mode.
+
+the one case for exporting to a file is running on a machine without chrome; then
+`yt_cookies.py export` writes one, and it verifies premium before overwriting a
+working file.
+
+**where cookies come from.** yt-dlp reads chrome's cookie store directly:
 
 ```
 --cookies-from-browser chrome:{profile}
