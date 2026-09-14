@@ -1,0 +1,28 @@
+{
+  // markdownlint is the *linter* for markdown; prettier is the formatter.
+  // they must not fight, so anything prettier owns is left to prettier.
+  "config": {
+    "default": true,
+
+    // 88 to match ruff's line-length (CLAUDE.md). tables, code blocks and
+    // headings are exempt: their width is content, not wrapping, and prettier
+    // aligns the tables.
+    "MD013": {
+      "line_length": 88,
+      "tables": false,
+      "code_blocks": false,
+      "headings": false,
+    },
+
+    // prettier owns emphasis style (`_x_`) and list markers; letting
+    // markdownlint have an opinion here produces a fight on every save.
+    "MD049": false,
+    "MD050": false,
+
+    // the spec quotes real api responses and shell output verbatim, where a
+    // bare url on its own line is the actual content.
+    "MD034": false,
+  },
+  "globs": ["**/*.md"],
+  "ignores": [".venv/**", ".claude/**", "node_modules/**"],
+}

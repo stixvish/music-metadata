@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>{% block title %}music-metadata{% endblock %}</title>
+        <link rel="stylesheet" href="/static/app.css" />
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/htmx/2.0.4/htmx.min.js"></script>
+        <script defer
+                src="https://cdnjs.cloudflare.com/ajax/libs/alpinejs/3.14.8/cdn.min.js"></script>
+    </head>
+    <body>
+        <nav>
+            <a href="/">library</a>
+            <a href="/review">review</a>
+            <a href="/acquire">acquire</a>
+            <a href="/diff">diff</a>
+        </nav>
+        <main>
+            {% block content %}{% endblock %}
+        </main>
+    </body>
+</html>

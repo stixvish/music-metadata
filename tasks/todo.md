@@ -8,7 +8,7 @@ every milestone is one branch and one pr (`CLAUDE.md`). checkpoints are human
 review gates: stop, report real numbers, wait.
 
 **standing rule, every milestone: `README.md` is updated in the same pr.** it
-states what exists and runs *today* — never what is planned. a milestone is not
+states what exists and runs _today_ — never what is planned. a milestone is not
 done until the README matches it. this is the last task in each list below and
 it is not optional.
 
@@ -18,22 +18,22 @@ it is not optional.
 
 branch `feat/foundation`
 
-- [ ] **0.1 install the missing formatters.** `taplo`, `djlint` and `prettier`
+- [x] **0.1 install the missing formatters.** `taplo`, `djlint`, `prettier` and `markdownlint-cli2`
       are in `CLAUDE.md`'s check gate and are not installed on this machine.
-      **verify:** all seven checks run and report, even on an empty tree.
-- [ ] **0.2 `pyproject.toml` and the `uv` project.** python ≥3.12. runtime deps
+      **verify:** all eight checks run and report, even on an empty tree.
+- [x] **0.2 `pyproject.toml` and the `uv` project.** python ≥3.12. runtime deps
       `mutagen`, `httpx`, `pydantic>=2`, `fastapi`, `uvicorn`, `jinja2`; dev deps
       `ruff`, `mypy`, `pytest`, `pytest-cov`. ruff and mypy config copied from
       `CLAUDE.md` verbatim — 2-space indent, 88 cols, the full `select` list
       including `ANN`, `S` and `T20`, `mypy` strict on `src/`.
       **verify:** `uv sync` succeeds · `ruff check .` and `mypy src/` both pass.
-- [ ] **0.3 `lefthook.yml`.** the seven checks in `CLAUDE.md`'s stated order, all
+- [x] **0.3 `lefthook.yml`.** the eight checks in `CLAUDE.md`'s stated order, all
       blocking on commit.
       **verify:** a commit with a deliberate format error is rejected.
-- [ ] **0.4 `src/music_metadata/output.py`** — the single output module. `T20`
+- [x] **0.4 `src/music_metadata/output.py`** — the single output module. `T20`
       bans `print` in `src/` so the web ui can capture the same messages (§14).
       **verify:** a unit test captures emitted messages without stdout.
-- [ ] **0.5 `store.py` and `schema.sql`** — the six tables of §9a: `files`,
+- [x] **0.5 `store.py` and `schema.sql`** — the six tables of §9a: `files`,
       `recordings`, `service_ids`, `fingerprints`, `artwork`, `jobs`. unique
       indexes on `audio_md5` and on `isrc` (§11a depends on them). **raw response
       columns from day one** — §9a calls this the load-bearing decision, and
@@ -41,19 +41,22 @@ branch `feat/foundation`
       `source_version` on `recordings`.
       **verify:** round-trip test writes and reads a raw payload · the unique
       index rejects a duplicate md5.
-- [ ] **0.6 `web/app.py`, `web/jobs.py`, templates and static.** fastapi, jinja2,
+- [x] **0.6 `web/app.py`, templates and static.** fastapi, jinja2,
       htmx and alpine from a CDN, binding localhost with no auth. four routes
       stubbed (library, review, acquire, diff); library renders an empty table.
       **verify:** `uvicorn` serves the library screen · a `jobs` row can be
       written and polled through `/jobs/{id}` · `djlint` passes on templates.
-- [ ] **0.7 create `README.md`.** it does not exist yet. what the project does,
+      **note:** `web/jobs.py` (background _execution_) is deliberately not here
+      — nothing long-running exists to run yet. it lands with 1.10, which is
+      the first task that actually needs a job in flight.
+- [x] **0.7 create `README.md`.** it does not exist yet. what the project does,
       prerequisites (`uv`, `ffmpeg`, the `.env` keys actually needed), install,
       how to start the web ui, and an explicit "what is not built yet" section.
       **no command is listed that does not work.**
       **verify:** a reader following it from a clean checkout reaches a served
       library screen · `prettier --check` passes on it.
 
-> **acceptance for M0:** the seven-check gate passes clean, `pytest` is green,
+> **acceptance for M0:** the eight-check gate passes clean, `pytest` is green,
 > the library screen loads in a browser, and `README.md` describes exactly that
 > and nothing more.
 
@@ -109,8 +112,8 @@ works end to end.**
       `map` with the §9c view flags.
       **verify:** `music-metadata map --missing beatport` renders TSV · `diff`
       shows old → new per field.
-- [ ] **1.10 web — library screen over real rows**, and `resolve` as a background
-      job with polled progress.
+- [ ] **1.10 `web/jobs.py` — background execution**, and the library screen over
+      real rows, with `resolve` running as a job and progress polled.
       **verify:** a 20-track resolve runs from the browser and progress advances
       without holding an HTTP request open.
 - [ ] **1.11 update `README.md`.** add `probe`, `resolve --limit N`, `diff`,
@@ -120,7 +123,9 @@ works end to end.**
       **verify:** every command shown is copy-pasteable and works today.
 
 > ### checkpoint 1 — stop and review
+>
 > 20 tracks resolved, diffed, applied to an output tree.
+>
 > - **G4 asserted by checksum:** `~/Music/library` is byte-identical before and
 >   after. not inspected — asserted.
 > - show the full diff for `*NSYNC - Bye Bye Bye` and confirm it matches §5a's
@@ -168,6 +173,7 @@ branch `feat/credit`
       sentence. record the **measured** G6 agreement rate from checkpoint 2.
 
 > ### checkpoint 2 — stop and review
+>
 > G6 measured across all 418 featured tracks. target ≥95% agreement, but
 > **report the real rate** — §6 says the disagreement rate is reported, not
 > assumed. review a sample of the disagreements in the browser.
@@ -210,6 +216,7 @@ branch `feat/artwork`
       that v1 needs **no musicfetch token** (F36/F37).
 
 > ### checkpoint 3 — stop and review
+>
 > G5 reported: count accepted per candidate tier, count flagged, measured
 > against §7c's 4/4-at-3000² baseline. confirm the ~3-4 GB output estimate holds
 > at library scale.
@@ -225,8 +232,8 @@ branch `feat/beatport`
       tokens); `OAuthClientProvider` reads `.env` when OQ-5 lands.
       **verify:** a token is minted and refreshed on expiry · a missing cookie
       degrades to "no beatport", never a crash.
-- [ ] **4.2 `sources/beatport.py`** — `?isrc=` as a fast path, then artist + name
-      + mix-name search. F22: ISRC succeeds on originals and **fails on all 9
+- [ ] **4.2 `sources/beatport.py`** — `?isrc=` as a fast path, then artist +
+      name + mix-name search. F22: ISRC succeeds on originals and **fails on all 9
       `Blessings` remixes**.
       **verify:** an original resolves by ISRC · a remix resolves by search ·
       zero results is a normal outcome, not an error.
@@ -253,6 +260,7 @@ branch `feat/beatport`
       `TKEY` notation, and the **honest** BPM/key coverage from checkpoint 4.
 
 > ### checkpoint 4 — stop and review
+>
 > G3 class fractions reported (same-recording vs different-edit vs no match). a
 > beatport-disabled run completes. BPM and key coverage stated **honestly** per
 > §7e — good for dance, poor for hip-hop, near-zero for indian repertoire, and
@@ -291,6 +299,7 @@ branch `feat/verify`
       a clear statement that acquisition (§10) is not built yet.
 
 > ### checkpoint 5 — v1 complete
+>
 > full library tagged to an output tree. **every gate G1–G11 reported with real
 > numbers against its target.** review queue worked through in the browser.
 > `~/Music/library` byte-identical to where it started.

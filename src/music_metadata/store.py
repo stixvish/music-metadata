@@ -1,0 +1,368 @@
+"""the sidecar cache — sqlite, shared by the CLI and the web ui (SPEC.md §9a).
+
+this is a permanent store keyed by identity, not a scratch file. §4 promises
+that improving the resolver re-tags the library for free, and that is only true
+if a re-run costs no API calls.
+
+it stores **raw responses**, not just parsed fields. every finding in §3 that
+changed the parsing would otherwise have forced a full re-fetch; with the raw
+payloads a resolver fix is replayed offline.
+"""
+
+from __future__ import annotations
+
+import json
+import sqlite3
+import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
+from pathlib import Path
+from typing import Any, cast
+
+# bump when the parsing logic changes. rows below this are recomputed from
+# their stored raw payloads; only rows with no raw payload are re-fetched.
+SOURCE_VERSION = 1
+
+# raw payloads are arbitrary JSON, but "arbitrary JSON" is a type, not `Any`.
+type JsonValue = (
+  str | int | float | bool | None | list["JsonValue"] | dict[str, "JsonValue"]
+)
+
+# the services whose raw payloads this schema has a column for. a typo would
+# otherwise be swallowed by sqlite as an unknown column at write time.
+_RAW_COLUMNS = {
+  "spotify": "raw_spotify",
+  "musicbrainz": "raw_musicbrainz",
+  "work": "raw_work",
+  "beatport": "raw_beatport",
+  "itunes": "raw_itunes",
+  "discogs": "raw_discogs",
+}
+
+_SCHEMA = Path(__file__).with_name("schema.sql")
+
+
+class Store:
+  """the sidecar database."""
+
+  def __init__(self, conn: sqlite3.Connection) -> None:
+    """Wrap an open connection.
+
+    Args:
+      conn: a connection whose row factory yields mappings.
+    """
+    self.conn = conn
+    # fastapi runs sync route handlers in a threadpool, so the connection is
+    # touched from more than one thread. sqlite allows that only with
+    # check_same_thread=False, and only one statement at a time — hence the lock.
+    self._lock = threading.Lock()
+
+  @classmethod
+  @contextmanager
+  def open(cls, path: Path | str) -> Iterator[Store]:
+    """Open the sidecar at `path`, creating it if needed.
+
+    Args:
+      path: the sqlite file. Parent directories are created.
+
+    Yields:
+      An open store, closed on exit.
+    """
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(path, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    # foreign keys are off by default in sqlite and silently ignore violations.
+    conn.execute("PRAGMA foreign_keys = ON")
+    try:
+      conn.executescript(_SCHEMA.read_text())
+      yield cls(conn)
+      conn.commit()
+    finally:
+      conn.close()
+
+  # --- raw access ------------------------------------------------------------
+
+  def execute(self, sql: str, params: tuple[Any, ...] = ()) -> None:
+    """Run a statement and commit it.
+
+    Args:
+      sql: the statement.
+      params: bound parameters.
+    """
+    with self._lock:
+      self.conn.execute(sql, params)
+      self.conn.commit()
+
+  def query(self, sql: str, params: tuple[Any, ...] = ()) -> list[sqlite3.Row]:
+    """Run a query.
+
+    Args:
+      sql: the query.
+      params: bound parameters.
+
+    Returns:
+      Every matching row.
+    """
+    with self._lock:
+      return self.conn.execute(sql, params).fetchall()
+
+  # --- files -----------------------------------------------------------------
+
+  def put_file(
+    self,
+    path: str,
+    audio_md5: str,
+    duration_s: float,
+    isrc: str | None = None,
+    mtime: float | None = None,
+  ) -> None:
+    """Record one file on disk, replacing any earlier row for the same path.
+
+    Args:
+      path: the file's path. This is the file's identity.
+      audio_md5: md5 of the decoded audio (F44), not of the container.
+      duration_s: duration in seconds.
+      isrc: the ISRC carried in the file's own tag, if any.
+      mtime: the file's modification time.
+    """
+    self.execute(
+      """INSERT INTO files (path, audio_md5, duration_s, isrc_from_tag, mtime)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(path) DO UPDATE SET
+           audio_md5     = excluded.audio_md5,
+           duration_s    = excluded.duration_s,
+           isrc_from_tag = excluded.isrc_from_tag,
+           mtime         = excluded.mtime""",
+      (path, audio_md5, duration_s, isrc, mtime),
+    )
+
+  def files_by_isrc(self, isrc: str) -> list[sqlite3.Row]:
+    """Return every file carrying this ISRC.
+
+    More than one is normal and is what §11a classes B and C describe.
+
+    Args:
+      isrc: the ISRC to look up.
+
+    Returns:
+      Matching file rows.
+    """
+    return self.query("SELECT * FROM files WHERE isrc_from_tag = ?", (isrc,))
+
+  def files_by_md5(self, audio_md5: str) -> list[sqlite3.Row]:
+    """Return every file with this decoded-audio md5.
+
+    More than one means a §11a class A duplicate.
+
+    Args:
+      audio_md5: the md5 to look up.
+
+    Returns:
+      Matching file rows.
+    """
+    return self.query("SELECT * FROM files WHERE audio_md5 = ?", (audio_md5,))
+
+  # --- recordings ------------------------------------------------------------
+
+  def put_raw(self, isrc: str, service: str, payload: JsonValue) -> None:
+    """Store one service's raw response for a recording.
+
+    Args:
+      isrc: the recording's ISRC.
+      service: one of the services this schema has a column for.
+      payload: the decoded JSON response, stored verbatim.
+
+    Raises:
+      ValueError: if `service` has no raw column.
+    """
+    column = _RAW_COLUMNS.get(service)
+    if column is None:
+      msg = f"unknown service {service!r}; expected one of {sorted(_RAW_COLUMNS)}"
+      raise ValueError(msg)
+    self.execute(
+      f"""INSERT INTO recordings (isrc, source_version, {column})
+          VALUES (?, ?, ?)
+          ON CONFLICT(isrc) DO UPDATE SET
+            {column}       = excluded.{column},
+            source_version = excluded.source_version,
+            fetched_at     = datetime('now')""",  # noqa: S608 — column is from _RAW_COLUMNS, never user input
+      (isrc, SOURCE_VERSION, json.dumps(payload)),
+    )
+
+  def get_raw(self, isrc: str, service: str) -> JsonValue:
+    """Return a stored raw response, or None if it was never fetched.
+
+    Args:
+      isrc: the recording's ISRC.
+      service: one of the services this schema has a column for.
+
+    Returns:
+      The decoded payload, or None.
+
+    Raises:
+      ValueError: if `service` has no raw column.
+    """
+    column = _RAW_COLUMNS.get(service)
+    if column is None:
+      msg = f"unknown service {service!r}; expected one of {sorted(_RAW_COLUMNS)}"
+      raise ValueError(msg)
+    rows = self.query(
+      f"SELECT {column} AS payload FROM recordings WHERE isrc = ?",  # noqa: S608 — column is from _RAW_COLUMNS
+      (isrc,),
+    )
+    if not rows or rows[0]["payload"] is None:
+      return None
+    # json.loads is typed as returning Any; JsonValue is what it actually is.
+    return cast("JsonValue", json.loads(rows[0]["payload"]))
+
+  def isrcs_below_source_version(self) -> list[str]:
+    """Return recordings parsed by an older resolver, oldest first.
+
+    These are recomputed from their stored raw payloads rather than re-fetched.
+
+    Returns:
+      The ISRCs needing recomputation.
+    """
+    rows = self.query(
+      "SELECT isrc FROM recordings WHERE source_version < ? ORDER BY isrc",
+      (SOURCE_VERSION,),
+    )
+    return [r["isrc"] for r in rows]
+
+  # --- service ids, artwork, fingerprints ------------------------------------
+
+  def put_service_id(
+    self,
+    isrc: str,
+    service: str,
+    service_id: str | None = None,
+    url: str | None = None,
+    matched_by: str | None = None,
+    verified: bool = False,
+  ) -> None:
+    """Record which id a service gave this recording, and how it was matched.
+
+    Args:
+      isrc: the recording's ISRC.
+      service: the service name.
+      service_id: the service's own identifier.
+      url: a link to the listing.
+      matched_by: how the match was made, such as "isrc" or "search". F9 showed
+        search-derived links are not ISRC-verified, so this is not cosmetic.
+      verified: whether the match was confirmed against the ISRC.
+    """
+    self.execute(
+      """INSERT INTO service_ids
+           (isrc, service, service_id, url, matched_by, verified)
+         VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT(isrc, service) DO UPDATE SET
+           service_id = excluded.service_id,
+           url        = excluded.url,
+           matched_by = excluded.matched_by,
+           verified   = excluded.verified""",
+      (isrc, service, service_id, url, matched_by, int(verified)),
+    )
+
+  def put_artwork(
+    self,
+    isrc: str,
+    source_release: str | None,
+    url_template: str | None,
+    width: int | None,
+    sha256: str | None,
+    local_path: str | None,
+  ) -> None:
+    """Record the artwork chosen for a recording and where it came from.
+
+    Args:
+      isrc: the recording's ISRC.
+      source_release: the release §7c verified the artwork against.
+      url_template: the URL with the size segment left substitutable.
+      width: the pixel width actually fetched.
+      sha256: hash of the fetched bytes.
+      local_path: where the bytes were written.
+    """
+    self.execute(
+      """INSERT INTO artwork
+           (isrc, source_release, url_template, width, sha256, local_path)
+         VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT(isrc) DO UPDATE SET
+           source_release = excluded.source_release,
+           url_template   = excluded.url_template,
+           width          = excluded.width,
+           sha256         = excluded.sha256,
+           local_path     = excluded.local_path""",
+      (isrc, source_release, url_template, width, sha256, local_path),
+    )
+
+  def put_fingerprint(self, isrc: str, chromaprint: str, duration_s: float) -> None:
+    """Store a chromaprint fingerprint for a recording (§15).
+
+    Args:
+      isrc: the recording's ISRC.
+      chromaprint: the fingerprint as fpcalc returned it.
+      duration_s: the duration fpcalc measured.
+    """
+    self.execute(
+      """INSERT INTO fingerprints (isrc, chromaprint, duration_s)
+         VALUES (?, ?, ?)
+         ON CONFLICT(isrc) DO UPDATE SET
+           chromaprint = excluded.chromaprint,
+           duration_s  = excluded.duration_s""",
+      (isrc, chromaprint, duration_s),
+    )
+
+  # --- jobs ------------------------------------------------------------------
+
+  def create_job(self, kind: str) -> int:
+    """Start a background job and return its id.
+
+    Args:
+      kind: what the job does, such as "resolve" or "acquire".
+
+    Returns:
+      The new job's id.
+    """
+    with self._lock:
+      cur = self.conn.execute("INSERT INTO jobs (kind) VALUES (?)", (kind,))
+      self.conn.commit()
+      return int(cur.lastrowid or 0)
+
+  def update_job(
+    self,
+    job_id: int,
+    state: str | None = None,
+    progress: float | None = None,
+    error: str | None = None,
+  ) -> None:
+    """Update a job's progress. Only the arguments given are changed.
+
+    Args:
+      job_id: the job to update.
+      state: the new state, such as "running", "done" or "failed".
+      progress: fraction complete, 0.0 to 1.0.
+      error: the failure message, when the job failed.
+    """
+    # COALESCE keeps this one static statement instead of assembling SET
+    # clauses, so there is no dynamic SQL here at all.
+    self.execute(
+      """UPDATE jobs SET
+           state    = COALESCE(?, state),
+           progress = COALESCE(?, progress),
+           error    = COALESCE(?, error)
+         WHERE id = ?""",
+      (state, progress, error, job_id),
+    )
+
+  def get_job(self, job_id: int) -> sqlite3.Row | None:
+    """Return one job's current row.
+
+    Args:
+      job_id: the job to fetch.
+
+    Returns:
+      The job row, or None if there is no such job.
+    """
+    rows = self.query("SELECT * FROM jobs WHERE id = ?", (job_id,))
+    return rows[0] if rows else None

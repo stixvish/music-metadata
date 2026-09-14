@@ -1,0 +1,80 @@
+/* hand-written, no build step (SPEC.md §14). */
+:root {
+  --fg: #16161a;
+  --bg: #fbfbfa;
+  --muted: #6d6d78;
+  --line: #e2e2dd;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fg: #e9e9ec;
+    --bg: #15151a;
+    --muted: #9a9aa6;
+    --line: #2c2c35;
+  }
+}
+
+body {
+  margin: 0;
+  padding: 0 1.5rem 3rem;
+  background: var(--bg);
+  color: var(--fg);
+  font:
+    14px/1.5 ui-sans-serif,
+    system-ui,
+    -apple-system,
+    sans-serif;
+}
+
+nav {
+  display: flex;
+  gap: 1.25rem;
+  padding: 1rem 0;
+  border-bottom: 1px solid var(--line);
+}
+
+nav a {
+  color: var(--muted);
+  text-decoration: none;
+}
+
+nav a:hover {
+  color: var(--fg);
+}
+
+h1 {
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 0.4rem 0.75rem 0.4rem 0;
+  border-bottom: 1px solid var(--line);
+}
+
+th {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.empty {
+  color: var(--muted);
+}
+
+.job {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.error {
+  color: #b4472e;
+}
