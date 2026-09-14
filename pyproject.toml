@@ -112,5 +112,6 @@ include = [
   "src/music_metadata/output.py",
   "src/music_metadata/release.py",
   "src/music_metadata/naming.py",
+  "src/music_metadata/credit.py",
 ]
 fail_under = 90
