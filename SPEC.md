@@ -90,7 +90,7 @@ rewriting the URL, which is undocumented and ToS-gray. see §11 OQ-1.
 `GET beatport.com/track/…` → **HTTP 403**, `<title>Just a moment...</title>`.
 but `api.beatport.com` is a different origin and is **not** cloudflare-fronted:
 
-```
+```text
 api.beatport.com/v4/catalog/tracks/23984398/   HTTP 401  server: istio-envoy
 api.beatport.com/v4/docs/                      HTTP 200
 api.beatport.com/v4/auth/o/token/  (empty POST) HTTP 400
@@ -121,7 +121,7 @@ plan of record.
 captured live from a logged-in session. `www.beatport.com/api/auth/session`
 returns a nextauth session containing a bearer token:
 
-```
+```text
 token.accessToken      1156 chars
 token.tokenType        bearer
 token.expiresIn        599 seconds          ← ~10 minutes
@@ -149,7 +149,7 @@ no swagger-ui scraping. this is simpler _and_ more durable than the
 `/v4/catalog/tracks/{id}/` includes an `isrc` field. comparing it to the ISRC we
 sent musicfetch turns F9's fuzzy-match worry into a cheap exact check:
 
-```
+```text
 17 beatport ids from the musicfetch sample
 16/17 ISRC exact match
  1/17 mismatch — "MEDUZA & Khalid - Weekend"
@@ -161,7 +161,7 @@ record and fall back to apple. no artist/title/duration heuristics needed.
 
 **F13 — `sub_genre` is almost always null; `genre` is the field that matters.**
 
-```
+```text
 sub_genre populated:  1 of 17  (6%)  — only "Mainstage" → "Big Room"
 ```
 
@@ -194,7 +194,7 @@ read from the partner portal and `api.beatport.com/v4/docs/` while logged in
 `client_credentials` — and **all three require a client id and secret issued by
 beatport**:
 
-```
+```text
 client_id={client_id provided}
 redirect_uri={redirect_uri shared with us, can not be different}
 "if you do not have authentication credentials please reach out to your
@@ -226,7 +226,7 @@ official identity service issued. only the _acquisition_ differs.
 **design consequence: the token provider is pluggable, the rest of tier 3 is
 not.** two implementations against one interface:
 
-```
+```text
 TokenProvider.get() -> bearer
   ├── CookieSessionProvider   works today, no approval  (F11)
   └── OAuthClientProvider     drop-in once credentials arrive (F15)
@@ -245,7 +245,8 @@ second-hand**, written by the earlier process the operator distrusts.
 
 **F17 — those ISRCs came from spotify, and they check out.** the operator
 confirms the library's ISRCs were originally taken from spotify, which explains
-why they identify the **streaming** release rather than the beatport one (F22). comparing each resolved ISRC's musicfetch
+why they identify the **streaming** release rather than the beatport one
+(F22). comparing each resolved ISRC's musicfetch
 title against the filename across the 20-track sample: **18 agree outright**,
 and both apparent misses are correct matches where apple appends soundtrack
 context — `Roke Na Ruke Naina` vs `Roke Na Ruke Naina (From "Badrinath Ki
@@ -255,7 +256,7 @@ titles will need a `(From "…")` normalisation decision, not the ISRCs.
 **F18 — yt-dlp returns structured music metadata, but not identity.**
 youtube music `- Topic` channels carry real fields:
 
-```
+```text
 track         Silk and Cologne (Spider-Verse Remix)
 artists       ['EI8HT', 'Offset']      ← flattened, same defect as spotify (§6)
 album         METRO BOOMIN PRESENTS SPIDER-MAN: ACROSS THE SPIDER-VERSE
@@ -270,7 +271,7 @@ insufficient as a source.
 this is the finding that makes acquisition cheap. feeding
 `music.youtube.com/watch?v={id}` to `/url` returns a fully resolved track:
 
-```
+```text
 8 of 8 staging video ids → ISRC recovered   (100%)
 4 of 8 also carried a beatport link
 ```
@@ -287,7 +288,7 @@ resolve.
 the operator holds youtube premium. **itag 141 (AAC-LC 256k) downloads
 successfully**, verified end-to-end:
 
-```
+```text
 downloaded today, itag 141 : aac LC 44100Hz 257516 bps  md5 2364cdfb…
 existing .staging file      : aac LC 44100Hz 257516 bps  md5 2364cdfb…
 raw audio stream md5        : bae6e47a…  ← identical on both
@@ -300,7 +301,7 @@ was acquired at itag 141 and that a new pipeline reproduces it exactly. itag 774
 **but the same probe failed earlier in the same session.** a first run returned
 only 151k opus, with yt-dlp reporting:
 
-```
+```text
 WARNING: [youtube] The provided YouTube account cookies are no longer valid.
 They have likely been rotated in the browser as a security measure.
 ```
@@ -335,7 +336,7 @@ variants in the library: 10 distinct ISRCs → **10 distinct musicfetch results*
 each naming its own remixer. remix identity is therefore _free_ — it falls out of
 the ISRC and needs no fuzzy title matching.
 
-```
+```text
 GBARL2500591  Blessings                      (original)
 GBARL2501117  Blessings - CamrinWatsin Remix
 GBARL2501127  Blessings - Odd Mob Remix
@@ -414,7 +415,7 @@ not the radio cut. two consequences:
 `mix_name` and `remixers` are separate fields, and `remixers` is empty exactly
 where it should be:
 
-```
+```text
 Blessings / "Extended Mix"      remixers: []              ← not a remix
 Blessings / "Max Styler Remix"  remixers: ["Max Styler"]  ← a remix
 ```
@@ -432,7 +433,7 @@ at **67 bpm**, a half-time detection error on a 130-ish track.
 **F25 — the library's existing tag convention is already close to the target.**
 a remix in the library today carries:
 
-```
+```text
 title         Blessings [Odd Mob Remix]
 TPE4          Odd Mob              ← remixer
 TIT3          Odd Mob Remix        ← mix name
@@ -449,7 +450,7 @@ search exposes every release a recording appears on.**
 `GET /v1/search?q=isrc:{ISRC}&type=track` returns one entry per release. for
 `INS181700238` (Arijit Singh — Roke Na Ruke Naina) it returns **ten**:
 
-```
+```text
 [single     ] 2017-02-14 trk 2/5   Badrinath Ki Dulhania      | Roke Na Ruke Naina
 [compilation] 2017-06-07 trk 5/20  Love Forever With Arijit…  | Roke Na Ruke Naina (From "Badrinath Ki Dulhania")
 [compilation] 2018-02-06 trk 2/20  Arijit Singh: Love Songs   | Roke Na Ruke Naina (From "Badrinath Ki Dulhania")
@@ -467,7 +468,7 @@ the _wrong release_ was chosen. picking the right release removes it for free.
 **1-track single**, which would set `track 1/1` and discard the album entirely.
 the album release is the better attribution:
 
-```
+```text
 [single     ] 2000-01-17 trk 1/1   Bye Bye Bye           ← earliest, but 1/1
 [album      ] 2000-03-21 trk 1/12  No Strings Attached   ← correct
 [compilation] 2005-10-25 …         Greatest Hits         ← plus 7 more
@@ -499,7 +500,7 @@ in bollywood the composer is credited as an "artist" on spotify, and **position
 is not a signal** — the composer appears first on some releases and last on
 others:
 
-```
+```text
 Lat Lag Gayee   spotify artists[]: ['Benny Dayal', 'Shalmali Kholgade', 'Pritam']   ← composer last
 Badtameez Dil   spotify artists[]: ['Pritam', 'Benny Dayal', 'Shefali Alvares', …]  ← composer first
 Jee Karda       spotify artists[]: ['Sachin-Jigar', 'Divya Kumar']                  ← composers first
@@ -508,7 +509,7 @@ Jee Karda       spotify artists[]: ['Sachin-Jigar', 'Divya Kumar']              
 musicbrainz resolves the roles in **two hops**. the recording gives performers
 and a link to the work; the work gives composer and lyricist:
 
-```
+```text
 /ws/2/isrc/INT101202571?inc=artist-credits+artist-rels+work-rels
    artist-credit : Benny Dayal & Shalmali Kholgade      ← Pritam already excluded
    vocal         : Benny Dayal
@@ -543,7 +544,7 @@ producer data ([developer.spotify.com, checked 2026-09-14](https://developer.spo
 
 what _is_ usable is `track.name`, which carries the feature explicitly:
 
-```
+```text
 Sweet Nothing (feat. Florence Welch)   artists: ['Calvin Harris', 'Florence Welch']
 Body & Soul (feat. Biig Piig)          artists: ['Emotional Oranges', 'Biig Piig']
 ```
@@ -551,7 +552,7 @@ Body & Soul (feat. Biig Piig)          artists: ['Emotional Oranges', 'Biig Piig
 **the tempting heuristic — `track.artists` minus `album.artists` — must not be
 used to assign roles.** it fails in two measured ways:
 
-```
+```text
 Lat Lag Gayee   album.artists: ['Pritam']          diff: ['Benny Dayal', 'Shalmali Kholgade']
                                                    ← the COMPOSER is the album artist;
                                                      the diff is the actual vocalists
@@ -567,7 +568,7 @@ is never decisive.
 **F30 — musicbrainz coverage is good, and the earlier "miss" was a server error.**
 sampled 30 ISRCs across the library at 1 req/s with retry:
 
-```
+```text
 resolved   28 / 30   (93%)
 not found   2 / 30   — Kamariya (INS181801821), Desperado (SGB502383473)
 ```
@@ -583,7 +584,7 @@ must never be conflated**: the parser distinguishes `error: Not Found` from
 **F31 — a musicbrainz miss does not mean a bad ISRC.** both ISRCs musicbrainz
 returned `Not Found` for resolve cleanly everywhere else:
 
-```
+```text
 INS181801821  musicfetch: Kamariya (From "Stree")   spotify: 10 releases
 SGB502383473  musicfetch: Desperado / RAGHAV, Tesher  spotify: 1 release
 ```
@@ -605,7 +606,7 @@ since it is exactly where composers pollute `artists[]`. the affected tracks are
 and disc numbers must come from the _chosen_ release.** measured on
 `USJI10000001` (\*NSYNC — Bye Bye Bye):
 
-```
+```text
 musicfetch appleMusic.id  1741747057
   itunes lookup   album='Beach Beats'          trk=138/150  disc=1/1   ← a 150-track compilation
   spotify (§7b)   album='No Strings Attached'  trk=1/12     disc=1     ← correct
@@ -659,7 +660,7 @@ carries UPC `196872030730` — **`Beach Beats`**, a stock beach photograph. the
 correct `No Strings Attached` cover is UPC `012414170224`. verified by md5 and
 by eye; they are unrelated images.
 
-```
+```text
 musicfetch image   …/196872030730.jpg   md5 26b1e50c…   Beach Beats (beach photo)
 correct album art  …/012414170224.jpg   md5 d8a4f911…   No Strings Attached
 currently embedded 1200×1200            md5 69fd3106…   No Strings Attached ✓
@@ -674,7 +675,7 @@ right one.
 **artwork must come from the release chosen in §7b**, not from the track-level
 image. the path:
 
-```
+```text
 §7b picks the release via spotify  →  album name + artist
   ↓
 itunes /search  term="{artist} {album}"  →  collectionId for that album
@@ -689,7 +690,7 @@ confirmed working end to end: the `No Strings Attached` URL upgrades to
 single-release.** `GET /search?term=…&entity=song` returned **11 distinct
 releases** of `Bye Bye Bye`:
 
-```
+```text
 No Strings Attached          1/12   2000-01-17   ← the album
 Bye Bye Bye - Single         1/1    2000-01-11   ← the single
 The Essential *NSYNC         9/17   2000-01-11
@@ -733,7 +734,7 @@ the one case musicfetch uniquely solved (`18 Months`, where
 `entity=album` returns `96 Months`) is solved by searching **`entity=song` with
 the track name** and filtering on `collectionName`:
 
-```
+```text
 entity=album  term='Calvin Harris 18 Months'      1 result,  0 album hits
 entity=song   term='Calvin Harris Sweet Nothing'  24 results, 2 album hits → collectionId 1713469222
 ```
@@ -753,7 +754,7 @@ link into an ISRC (F19).
 
 **F38 — indian repertoire is 167 of 1,494 tracks, and two signals agree on it.**
 
-```
+```text
 ISRC country prefix == IN     144
 genre matches indian/bollywood/punjabi/telugu/tamil   165
 both                          142
@@ -769,9 +770,9 @@ singapore). the scope rule is therefore **either** signal, not both.
 across all 1,494 files by ISRC and by audio-stream md5:
 
 **class A — true duplicates (3).** identical audio md5 _and_ identical ISRC; the
-second copy carries a ` (2)` filename suffix:
+second copy carries a space and `(2)` as a filename suffix:
 
-```
+```text
 Tiësto - The Business / (2)              85b48197…  same bytes
 John Summit & Feid - CHICA 305 / (2)     635e4af1…  same bytes
 NAV - My Business (ft. Future) / (2)     c11219b3…  same bytes
@@ -779,7 +780,7 @@ NAV - My Business (ft. Future) / (2)     c11219b3…  same bytes
 
 **class B — same ISRC, genuinely different recordings (2).**
 
-```
+```text
 Bebe Rexha - New Religion             174s   ← spotify says 174s  ✓
 Bebe Rexha - New Religion [Extended]  248s   ← wrong ISRC, inherited from the edit
 Emotional Oranges - Call It Off / (ft. JAEHYUN)
@@ -787,7 +788,7 @@ Emotional Oranges - Call It Off / (ft. JAEHYUN)
 
 **class C — an ISRC on an entirely unrelated song (1).**
 
-```
+```text
 INS181600966  spotify: 'Sau Tarah Ke', 238s
   Sau Tarah Ke.aiff          238s  ✓ correct
   Jai Jai Shivshankar.aiff   230s  ✗ a completely different song
@@ -796,7 +797,7 @@ INS181600966  spotify: 'Sau Tarah Ke', 238s
 **F40 — duration identifies a wrong ISRC, and the tolerance is tight.**
 across 26 sampled tracks, local duration vs the ISRC's spotify duration:
 
-```
+```text
 26 of 26 agreed.  max legitimate delta: 2s.  most were exactly 0s.
 ```
 
@@ -811,7 +812,7 @@ fingerprinting required for the common case.
 
 **F41 — music videos are distinguishable from audio releases by metadata shape.**
 
-```
+```text
 youtube music '- Topic' upload      official artist-channel video
   uploader  EI8HT - Topic             uploader  Dua Lipa
   track     Silk and Cologne…         track     <absent>
@@ -851,7 +852,7 @@ remixer (§7a).
 **F43 — the `- Topic` test is primary; duration does NOT catch lyric videos.**
 enumerating `ytsearch5:Arijit Singh Roke Na Ruke Naina`:
 
-```
+```text
 279s  Roke Na Ruke Naina Lyrical Video   T-Series
 279s  Arijit Singh - … (Lyrics Video)    PluginVibes     ← reupload
 279s  Roke Na Ruke Naina                 Arijit Singh
@@ -877,7 +878,7 @@ none of these five would be admitted, but only because of the metadata test.
 
 **F44 — an ISRC is not a unique key for a file.** measured in this library:
 
-```
+```text
 INS181600966   md5 95eff850…   Jonita Gandhi & Amit Mishra - Sau Tarah Ke.aiff
 INS181600966   md5 fe6d0c18…   Vishal Dadlani & Benny Dayal - Jai Jai Shivshankar.aiff
 ```
@@ -894,7 +895,7 @@ does not arise: those describe the catalogue entry, not a file on disk.
 `GET /v1/tracks/{id}` returns `external_ids.isrc` alongside name, duration, album,
 track and disc number — everything §7b needs, in one unauthenticated-tier call:
 
-```
+```text
 external_ids  {'isrc': 'GBARL2501127'}
 album         Blessings - The Remixes (Part 2) | trk 4/6 | disc 1
 duration      189 s
@@ -909,7 +910,7 @@ the clean source.** measured across three tracks.
 **spotify does not expose it.** the full album object under client-credentials has
 no `label` key whatsoever:
 
-```
+```text
 keys: album_type artists copyrights external_ids external_urls genres href id
       images name release_date release_date_precision total_tracks tracks type uri
 ```
@@ -923,7 +924,7 @@ is lossy guesswork.
 conflates labels, sub-labels, publishers, pressing plants and **recording
 studios**:
 
-```
+```text
 ['T-Series', 'Super Cassettes…', …, 'Yash Raj Studio', 'Audiogarage Studios',
  'Enzy Studios', 'J.S. Workstation', 'Sound Ideas Studio']
 ```
@@ -931,13 +932,13 @@ studios**:
 **`/releases/{id}` is clean.** labels are typed, and studios are correctly
 separated into `companies[]` with their roles:
 
-```
+```text
 labels[]  : ['T-Series (Label)']
 companies : ['Super Cassettes Industries Pvt. Ltd. [Copyright (c)]',
              'Future Sound Of Bombay [Mixed At]']        ← not labels
 ```
 
-```
+```text
 Demons Protected By Angels  labels: XO, Republic Records
 18 Months                   labels: Sony Music, Fly Eye, Columbia, Deconstruction
 Badrinath Ki Dulhania       labels: T-Series
@@ -961,7 +962,7 @@ genre chain (§7).
 **F48 — `bestaudio` degrades silently; an exact itag fails loudly.** measured on
 the same track, same moment:
 
-```
+```text
 -f 999        (nonexistent)       ERROR: Requested format is not available   ← loud
 -f bestaudio  with cookies        774  293k opus     ← premium, but OPUS not AAC
 -f bestaudio  without cookies     251  151k opus     ← SILENT degradation
@@ -998,7 +999,7 @@ both resampled to 48 kHz):
 nyquist — where opus at 48 kHz could hold content AAC physically cannot — there
 is nothing:
 
-```
+```text
 OPUS 22050-23000 Hz : -79.9 dB     ← filter skirt, 53 dB below the music
 OPUS 23000-23900 Hz : -103.0 dB    ← silence
    (reference, 1000-2000 Hz: opus -27.0, aac -27.0 — identical)
@@ -1029,7 +1030,7 @@ encode on youtube._
 **F50 — AIFF cannot hold AAC; the conversion is a decode, not a remux.** this
 matters because it determines what the 5.4x storage cost is actually buying.
 
-```
+```text
 ffmpeg -i source.m4a -c:a copy -y out.aiff
   [aiff] block align not set
   [out#0/aiff] Could not write header (incorrect codec parameters ?)
@@ -1038,7 +1039,7 @@ ffmpeg -i source.m4a -c:a copy -y out.aiff
 **AIFF is a PCM container.** there is no "put the AAC into an AIFF" operation —
 the AAC is decoded to PCM and the PCM is stored:
 
-```
+```text
 source  aac, fltp (float planar), 44100 Hz, stereo
 output  pcm_s16be, s16,           44100 Hz, stereo     ← matches the existing library exactly
 ```
@@ -1067,7 +1068,8 @@ preserve. 16/44.1 matches the library and costs 33% less than 24-bit.
 published Starter is 6 req/min ([musicfetch.io](https://musicfetch.io/) pricing,
 checked 2026-09-14). measured: **20 sequential requests at 1 req/s, all HTTP
 200, zero 429s.** the 7-day trial is capped at 5,000 requests — 3.3× the whole
-library, so the entire job fits inside the trial. the operator is on the **business plan: 150k requests,
+library, so the entire job fits inside the trial. the operator is on the
+**business plan: 150k requests,
 20 req/min**. we **respect the published limit rather than the measured one** —
 the limiter is a token bucket at 20/min, not 1/s. a full 1,439-track pass is
 then ~72 minutes, and resolution is cached so it is paid once.
@@ -1100,7 +1102,7 @@ Music.** all three misses were bollywood. subject to F9.
 
 ## 5. architecture — three tiers, because F1 forced it
 
-```
+```text
   ISRC (from file tag)
         │
         ▼
@@ -1133,7 +1135,7 @@ worked on `*NSYNC - Bye Bye Bye.aiff`, with the real values each call returned.
 
 **step 0 — read the file. no network.**
 
-```
+```sh
 ffprobe → TSRC = USJI10000001
 ```
 
@@ -1141,7 +1143,7 @@ if there is no ISRC, the track goes to the tier-0 path (§10) instead.
 
 **step 1 — spotify, queried DIRECTLY by ISRC.** _(not via musicfetch)_
 
-```
+```text
 GET /v1/search?q=isrc:USJI10000001&type=track&limit=10
 → 10 releases
 ```
@@ -1149,7 +1151,7 @@ GET /v1/search?q=isrc:USJI10000001&type=track&limit=10
 rank them `album > single > compilation`, then `total_tracks` DESC, then
 `release_date` ASC (§7b). this yields two different things:
 
-```
+```text
 chosen release   → No Strings Attached | album artist *NSYNC | trk 1/12 | disc 1
 earliest date    → 2000-01-17   = MIN(release_date) over ALL 10 releases
 ```
@@ -1160,7 +1162,7 @@ same response (F33).
 
 **step 2 — musicbrainz, also queried directly by ISRC.**
 
-```
+```text
 GET /ws/2/isrc/{ISRC}?inc=artist-credits+artist-rels+work-rels
 → artist-credit joinphrases  → main vs featured split (§6)
 → performance relation       → work id
@@ -1174,7 +1176,7 @@ the track. on `currently busy`, **retry** — that is not a miss (F30).
 **step 3 — beatport.** try `?isrc=` first; on zero results search by
 artist + name + mix name (F22). compare durations:
 
-```
+```text
 within ±5s  → same recording → take genre, sub_genre, label, bpm, key, mix_name
 outside ±5s → different edit  → take genre, sub_genre, label ONLY (F23)
 ```
@@ -1183,7 +1185,7 @@ zero results is normal; genre then falls back to itunes.
 
 **step 4 — artwork (§7c).** three candidates, all free, **no musicfetch** (F37):
 
-```
+```text
 A  itunes /search?term='*NSYNC No Strings Attached'&entity=album
       here: 'No Strings Attached' == chosen album   → ACCEPT
 B  itunes /search?term='*NSYNC Bye Bye Bye'&entity=song
@@ -1218,7 +1220,7 @@ carry multiple _main_ artists. this is not an edge case.
 explicit `joinphrase` per element, so the boundary is machine-readable rather
 than inferred:
 
-```
+```text
 David Guetta - Little Bad Girl (ft. Taio Cruz & Ludacris)
   [('David Guetta', ' feat. '), ('Taio Cruz', ' & '), ('Ludacris', '')]
    ^^^^^^^^^^^^^ main        ^^^ the boundary    ^^^^^^^^^^ features
@@ -1297,7 +1299,7 @@ where the operator has asserted a value, no source is consulted for that field.
 
 **title format.** one canonical shape, in this order:
 
-```
+```json
 {Name} (ft. {Featured artists}) [{Mix name}]
 ```
 
@@ -1305,7 +1307,7 @@ where the operator has asserted a value, no source is consulted for that field.
 - the **bracket** carries the mix name only
 - either part is omitted when it does not apply; the bare name is the common case
 
-```
+```text
 Blessings (ft. Clementine Douglas)
 Blessings [Odd Mob Remix]
 Blessings (ft. Clementine Douglas) [Extended]
@@ -1346,7 +1348,7 @@ invented for a track that simply has no mix name.
 **performer vs composer — indian repertoire only (F28, F38).** this rule is
 **scoped, not global.** it applies when either signal fires:
 
-```
+```text
 ISRC country prefix == IN   OR   genre matches
   bollywood | indian | punjabi | telugu | tamil
 ```
@@ -1378,7 +1380,7 @@ recording. only `artist` is held to the performers-only rule.
 **separator style (OQ-7, decided).** comma between every artist, `&` before the
 last:
 
-```
+```text
 Benny Dayal, Shalmali Kholgade & Divya Kumar
 Arijit Singh                                  (single artist — no separator)
 Benny Dayal & Shalmali Kholgade               (two artists — & only)
@@ -1420,7 +1422,7 @@ recording appears on many (F26): the original album, a single, and any number of
 compilations. album, album artist, track number, disc number and even the title
 string all change with that choice.
 
-```
+```text
 candidates = spotify /v1/search?q=isrc:{ISRC}&type=track
 rank by (album_type: album=0, single=1, compilation=2),
         then total_tracks == 1 LAST,      # promo singles
@@ -1441,7 +1443,7 @@ pick the first
 **why not "most tracks"?** an earlier revision ranked by `total_tracks`
 descending, which fixed `Kamariya` and **broke deluxe editions**:
 
-```
+```text
 NAV - Never Sleep (USUM72214489)
   single  2022-07-29  1/1   Never Sleep                                ← promo
   album   2022-09-09  4/19  Demons Protected By Angels                 ← correct
@@ -1463,7 +1465,7 @@ nothing is lost. set it false to take whichever release the ranking picks.
 **the promo-single clause is load-bearing.** ranking by release date alone picks
 the wrong release for `Kamariya`:
 
-```
+```text
 [single] 2018-08-09  1/1  Kamariya (From "Stree")  | Kamariya (From "Stree")   ← earliest, WRONG
 [single] 2018-08-22  2/4  Stree                    | Kamariya                  ← correct
 ```
@@ -1533,7 +1535,7 @@ musicfetch's `appleMusic.id`; F37 measured that two itunes search entities
 reproduce its results byte for byte on 4/4 probes, and musicfetch was removed
 from tier 1 entirely. **the library path needs no musicfetch token** (F36).
 
-```
+```text
 1. §7b has already chosen the release  →  album name + album artist
 
 2. candidate A — itunes album search
@@ -1645,7 +1647,8 @@ a real dependency decision, not a small one — `essentia` is ~120 MB.
 
 **and it may not be worth it.** rekordbox computes its own BPM and key during
 analysis and prefers its own values over tags, so a computed `TBPM` mainly buys
-sorting in serato and in this project's own ui. **decided: write BPM and key only where a source supplies them, leave them empty
+sorting in serato and in this project's own ui. **decided: write BPM and key
+only where a source supplies them, leave them empty
 otherwise.** local analysis is **not implemented** — rekordbox recomputes both
 during its own analysis and prefers its own values over tags, so computing them
 here buys almost nothing for ~120 MB of dependencies. an empty field is honest;
@@ -1738,7 +1741,7 @@ the §7e position on BPM.
 the operator's decision: emit a fully tagged copy, leave `~/Music/library`
 untouched.
 
-```
+```text
 resolve  → sidecar (SQLite + per-track JSON), no audio touched
 review   → `diff` shows every proposed field change, old → new
 apply    → write tagged copies to the output tree
@@ -1766,7 +1769,7 @@ fix is replayed offline against stored JSON.
 
 **tables.**
 
-```
+```text
 files       path, audio_md5, duration_s, isrc_from_tag, mtime
             → unique(audio_md5) and unique(isrc) power dedup (§11a)
 
@@ -1828,7 +1831,7 @@ consult and no stub to generate.
 **merge rule: the resolver never overwrites what it did not write.** the sidecar
 keeps the last value it generated per `(md5, field)`. on the next run:
 
-```
+```text
 file value == last generated  →  resolver may refresh it
 file value != last generated  →  the operator edited it
                                  preserve verbatim, mark provenance `manual`
@@ -1851,7 +1854,7 @@ plain text and diffs cleanly.
 
 `library.toml` is complete but long. `map` renders it for scanning:
 
-```
+```sh
 music-metadata map                       # TSV: md5, file, isrc, spotify, itunes, beatport
 music-metadata map --missing beatport    # only rows where beatport is empty
 music-metadata map --no-isrc             # the 55 (§2) — title, artist, duration to search by
@@ -1875,7 +1878,7 @@ independently, so a 50-track playlist is 50 identity resolutions and only the
 admitted ones become downloads. the **ISRC dedup check (§11a) runs before
 download**, so tracks already in the library cost one API call, not a file.
 
-```
+```text
 playlist url → yt-dlp --flat-playlist → N video ids
 single url   → 1 video id
                     │
@@ -1918,7 +1921,8 @@ resolve confidently to the studio recording. measured baseline: 8/8 resolved.
 F20); the library is AIFF. the conversion costs **5.4×**
 storage — 9.5 GB → 51.9 GB measured — and **adds no quality**, since nothing is
 recoverable that the AAC encoder discarded. the existing 1,494 files are already
-converted and are not in scope to revisit. ~~the open question is **new** acquisitions.~~ **decided: convert to AIFF**
+converted and are not in scope to revisit.
+~~the open question is **new** acquisitions.~~ **decided: convert to AIFF**
 (`pcm_s16be`, 44.1 kHz), for **metadata compatibility** — AIFF carries ID3 and
 both DJ apps read the full frame set (F50). the 5.4× cost is accepted
 deliberately: it buys tag support, not audio quality, and the conversion is a
@@ -1949,7 +1953,7 @@ working file.
 
 **where cookies come from.** yt-dlp reads chrome's cookie store directly:
 
-```
+```text
 --cookies-from-browser chrome:{profile}
 ```
 
@@ -1972,7 +1976,7 @@ dedicated profile is the fix, not a re-export.
 **where it sits in the pipeline.** cookies are used at exactly two points, and
 checked before either:
 
-```
+```text
 1. BATCH PRECONDITION  (gate G8)
      tools/yt_cookies.py check
      asserts itag 141 or 774 is offered
@@ -1985,9 +1989,11 @@ checked before either:
 ```
 
 **a format failure is treated as systemic until proven otherwise.** cookie
-validity is transient (F20), so a batch that starts valid can rotate at track 200. on the **first** `-f 141/774` failure the pipeline re-runs the cookie probe:
+validity is transient (F20), so a batch that starts valid can rotate at
+track 200. on the **first** `-f 141/774` failure the pipeline re-runs the
+cookie probe:
 
-```
+```text
 probe now FAILS  →  cookies died mid-batch.
                     ABORT THE ENTIRE BATCH IMMEDIATELY.
                     every remaining track stays queued, untouched.
@@ -2004,7 +2010,7 @@ ban-risk note).
 no cookies — musicfetch `/url` (F19) and the metadata probe run unauthenticated —
 so a cookie failure blocks _downloading_, never _identifying_.
 
-```
+```text
 resolve 50 identities     → cached (§9a), survives the abort
 cookies stale             → batch aborts, 0 files written
 operator refreshes them   → tools/yt_cookies.py setup / check
@@ -2047,7 +2053,7 @@ tree is de-duplicated.
 **preventing future duplicates.** the sidecar holds a unique index on ISRC and on
 audio md5. `acquire` checks both **before download**:
 
-```
+```text
 ISRC already in library        → skip, report "already have this recording"
 audio md5 matches after fetch  → discard the download, keep the existing file
 ```
@@ -2056,7 +2062,7 @@ the ISRC check is the cheap one and runs first — tier 0 resolves identity befo
 committing to a download anyway (§10), so a duplicate costs one API call rather
 than a file.
 
-**note the ` (2)` filenames are a symptom, not the test.** all three class-A
+**note the `(2)` filenames are a symptom, not the test.** all three class-A
 duplicates happen to carry it, but the test is the audio hash — a re-download
 under a different name would not.
 
@@ -2064,7 +2070,7 @@ under a different name would not.
 
 the operator wants the **release**, never the video (F41).
 
-```
+```text
 admit   uploader ends with ' - Topic'  AND  track/artist/album present
 reject  otherwise  →  retry via music.youtube.com, or refuse with a reason
 ```
@@ -2084,7 +2090,7 @@ for the audio release rather than downloading the page it was handed.
 
 ## 12. project structure, commands, testing
 
-```
+```text
 src/music_metadata/
   cli.py            # entry point
   acquire.py        # tier 0 — yt-dlp + /url identity (§10)
@@ -2146,7 +2152,7 @@ installed and working on this machine.
 
 **style, linting and formatting live in `CLAUDE.md`, not here.**
 
-```
+```sh
 music-metadata acquire URL           # tier 0 — download + resolve identity
 music-metadata probe                 # local tag survey, no network
 music-metadata resolve [--limit N]   # tiers 1-3 → sidecar

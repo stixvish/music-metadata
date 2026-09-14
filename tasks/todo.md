@@ -18,9 +18,9 @@ it is not optional.
 
 branch `feat/foundation`
 
-- [ ] **0.1 install the missing formatters.** `taplo`, `djlint` and `prettier`
+- [ ] **0.1 install the missing formatters.** `taplo`, `djlint`, `prettier` and `markdownlint-cli2`
       are in `CLAUDE.md`'s check gate and are not installed on this machine.
-      **verify:** all seven checks run and report, even on an empty tree.
+      **verify:** all eight checks run and report, even on an empty tree.
 - [ ] **0.2 `pyproject.toml` and the `uv` project.** python ≥3.12. runtime deps
       `mutagen`, `httpx`, `pydantic>=2`, `fastapi`, `uvicorn`, `jinja2`; dev deps
       `ruff`, `mypy`, `pytest`, `pytest-cov`. ruff and mypy config copied from
@@ -53,7 +53,7 @@ branch `feat/foundation`
       **verify:** a reader following it from a clean checkout reaches a served
       library screen · `prettier --check` passes on it.
 
-> **acceptance for M0:** the seven-check gate passes clean, `pytest` is green,
+> **acceptance for M0:** the eight-check gate passes clean, `pytest` is green,
 > the library screen loads in a browser, and `README.md` describes exactly that
 > and nothing more.
 
@@ -229,7 +229,8 @@ branch `feat/beatport`
       tokens); `OAuthClientProvider` reads `.env` when OQ-5 lands.
       **verify:** a token is minted and refreshed on expiry · a missing cookie
       degrades to "no beatport", never a crash.
-- [ ] **4.2 `sources/beatport.py`** — `?isrc=` as a fast path, then artist + name + mix-name search. F22: ISRC succeeds on originals and **fails on all 9
+- [ ] **4.2 `sources/beatport.py`** — `?isrc=` as a fast path, then artist +
+      name + mix-name search. F22: ISRC succeeds on originals and **fails on all 9
       `Blessings` remixes**.
       **verify:** an original resolves by ISRC · a remix resolves by search ·
       zero results is a normal outcome, not an error.
