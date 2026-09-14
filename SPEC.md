@@ -1391,13 +1391,92 @@ be re-run freely while the resolver runs once. AIFF tags are written as ID3;
 frames we do not own (serato's `GEOB` beatgrids and cue points) are preserved,
 never rewritten.
 
+## 9a. the cache — resolve once, re-tag forever
+
+**the sidecar is a permanent cache keyed by identity, not a scratch file.** the
+goal in §4 — "improving the resolver re-tags the library for free" — is only true
+if a re-run costs no API calls. with a 20 req/min ceiling (F8) and a 5,000-request
+trial, a careless re-run is expensive; with the cache it is free.
+
+**store raw responses, not just parsed fields.** this is the load-bearing
+decision. every finding in §3 that changed the parsing — release ranking (F27),
+the artwork chain (F34), track/disc source (F32) — would have forced a full
+re-fetch if only the parsed output had been kept. raw payloads mean a resolver
+fix is replayed offline against stored JSON.
+
+**tables.**
+
+```
+files       path, audio_md5, duration_s, isrc_from_tag, mtime
+            → unique(audio_md5) and unique(isrc) power dedup (§11a)
+
+recordings  isrc PK, fetched_at, source_version
+            raw_spotify JSON, raw_musicbrainz JSON, raw_work JSON,
+            raw_beatport JSON, raw_itunes JSON
+            → the resolved fields are a VIEW over these, recomputable offline
+
+service_ids isrc, service, service_id, url, matched_by, verified
+            → the equivalence map (below)
+
+fingerprints isrc, chromaprint, duration_s
+            → §15 acoustid, computed lazily and kept forever
+
+artwork     isrc, source_release, url_template, width, sha256, local_path
+            → 3-4 GB of covers fetched once
+
+jobs        id, kind, state, progress, started_at, error
+            → drives the web ui's progress (§14)
+```
+
+**`source_version` is what makes re-resolution safe.** bump it when the parsing
+logic changes; rows below the current version are recomputed from their stored
+raw payloads, and only rows with **no** raw payload are re-fetched.
+
+**cache invalidation is deliberate and rare.** these are catalogue facts, not
+live data — a recording's ISRC, composer and release list do not change. refetch
+only on explicit request, or when a field was never successfully resolved.
+
+## 9b. the service equivalence map
+
+`service_ids` records, per ISRC, every external identity we resolved, **and how
+confident we are in it**:
+
+```
+isrc          service    service_id  matched_by      verified
+GBARL2501127  spotify    3Kx…        isrc            yes
+GBARL2501127  beatport   23984398    name+mix        DIFFERENT EDIT (+83s)
+USJI10000001  appleMusic 1741747057  musicfetch      NO — collection mismatch
+USJI10000001  appleMusic 303171298   album search    yes
+```
+
+`matched_by` and `verified` are not decoration. the same table records the
+verified apple release used for artwork (§7c) and the **rejected** one, so a
+later run does not retry a known-bad id — and the beatport rows are exactly the
+re-acquisition worklist from OQ-8, with the duration delta already computed.
+
+for beatport specifically the map answers "what is the beatport equivalent of
+this track", including the honest answer **"a different recording that is 83
+seconds longer"** (F23).
+
+
 ## 10. acquisition — tier 0, a front-end not a second pipeline
 
 the operator wants to keep adding tracks from youtube music rather than buying
 every one on beatport. F19 makes this a small addition rather than a parallel
 system:
 
+**input is a playlist or a single track.** `--flat-playlist --dump-json`
+enumerates a playlist into `{id, title, duration, channel}` entries without
+downloading anything — verified working. each entry then runs the chain below
+independently, so a 50-track playlist is 50 identity resolutions and only the
+admitted ones become downloads. the **ISRC dedup check (§11a) runs before
+download**, so tracks already in the library cost one API call, not a file.
+
 ```
+playlist url → yt-dlp --flat-playlist → N video ids
+single url   → 1 video id
+                    │
+                    ▼  (per id)
 yt-dlp  →  audio file + youtube video id
                     │
                     ▼
