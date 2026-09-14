@@ -188,6 +188,54 @@ most wants. they are added to §7 as first-class outputs.
 `Tall Boys 100-130 Transition`. it is the most likely explanation for the F12
 mismatch and is the key to OQ-3 (remix identity).
 
+**F15 — the official API is the same API; only token acquisition differs.**
+read from the partner portal and `api.beatport.com/v4/docs/` while logged in
+(2026-09-14). three grant flows exist — `authorization_code`, `password`, and
+`client_credentials` — and **all three require a client id and secret issued by
+beatport**:
+
+```
+client_id={client_id provided}
+redirect_uri={redirect_uri shared with us, can not be different}
+"if you do not have authentication credentials please reach out to your
+ account manager to receive them"
+```
+
+`account.beatport.com/o/applications/` redirects to plain account settings —
+**there is no self-service app registration.** credentials require a business
+relationship, and that is a request the operator must make, not a technical step.
+
+**the official token is materially better when it exists:**
+
+| | web-session token (F11) | official OAuth token |
+|---|---|---|
+| TTL | `expires_in: 599` (~10 min) | `expires_in: 36000` (**10 hours**) |
+| refresh | re-mint from cookie | `refresh_token` |
+| credential | month-long httpOnly cookie | client id + secret |
+| approval | none | account manager |
+
+a 10-hour token covers a full 72-minute pass outright.
+
+**but note what this does *not* change.** the token captured in F11 is a valid
+bearer for `api.beatport.com` — it already returned `/v4/catalog/tracks/{id}/`
+successfully across 17 records. **we are not working around the official API; we
+are already calling it.** the endpoints, the fields, the ISRC verification and
+the genre data in F12–F14 are all the official API's, obtained with a token the
+official identity service issued. only the *acquisition* differs.
+
+**design consequence: the token provider is pluggable, the rest of tier 3 is
+not.** two implementations against one interface:
+
+```
+TokenProvider.get() -> bearer
+  ├── CookieSessionProvider   works today, no approval  (F11)
+  └── OAuthClientProvider     drop-in once credentials arrive (F15)
+```
+
+endpoints, field mapping, ISRC gating and rate limiting are identical either
+way. **this unblocks tier 3 now and makes adopting official credentials a
+one-class swap**, so the build is never waiting on beatport's business process.
+
 **F8 — rate limits are gentler in practice than documented.**
 published Starter is 6 req/min ([musicfetch.io](https://musicfetch.io/) pricing,
 checked 2026-09-14). measured: **20 sequential requests at 1 req/s, all HTTP
@@ -393,7 +441,8 @@ src/music_metadata/
     musicfetch.py   # tier 1 — identity + service ids
     itunes.py       # tier 2 — track/disc number
     musicbrainz.py  # tier 2 — artist-credit roles (§6)
-    beatport.py     # tier 3 — genre/bpm/key, cookie auth (F11)
+    beatport.py     # tier 3 — genre/bpm/key
+    bp_auth.py      # pluggable TokenProvider: cookie | oauth (F15)
     ratelimit.py    # token bucket, 20/min (F8)
   credit.py         # §6 main vs featured split
   arbitrate.py      # §7 precedence
@@ -428,6 +477,10 @@ live APIs, marked and excluded from the default run.
   3000², with 1400² as the no-rewrite fallback.** needs a decision.
 - ~~**OQ-2 beatport auth.**~~ **resolved by live capture** — F11. session-cookie
   → token minting is verified working against the operator's account.
+- **OQ-5 official beatport credentials.** worth requesting from an account
+  manager — a 10-hour token with refresh beats re-minting every 8 minutes. it is
+  a business request, not a blocker: `CookieSessionProvider` ships meanwhile and
+  the swap is one class (F15).
 - **OQ-4 tag shape for features.** option A (feature in title) or B (feature in
   artist) — see §6. **recommendation: A**, it sorts correctly in rekordbox and
   matches what itunes already does for most releases.
