@@ -820,6 +820,58 @@ both report `categories: ['Music']` and `media_type: video`, so neither of those
 fields helps. the reliable signal is that **youtube music auto-generated `- Topic`
 uploads carry `track`/`artist`/`album`, and music videos do not.**
 
+**F42 — complete tag inventory of the current library.** every key present
+across all 1,494 files:
+
+| field | count | coverage |
+|---|---|---|
+| `title` `genre` `date` `artist` | 1494 | 100% |
+| `disc` · `album` | 1491 | 99.8% |
+| `track` | 1490 | 99.7% |
+| `album_artist` | 1451 | 97.1% |
+| `TSRC` (ISRC) | 1439 | 96.3% |
+| `publisher` (label) | 1069 | 71.6% |
+| `TIT3` (mix name) | 99 | 6.6% |
+| `TPE4` (remixer) | 46 | 3.1% |
+| `TEXT` (lyricist) | 25 | 1.7% |
+| `composer` | 22 | 1.5% |
+
+fourteen fields, and the gaps say what this project adds: **no `TBPM`, no
+`TKEY`** anywhere (beatport supplies both at 100% of matches — F14), composer and
+lyricist under 2% (the musicbrainz work hop fills these — F28), and label missing
+on 28%.
+
+note `TIT3` (99) exceeds `TPE4` (46) by 53. that is **correct, not a gap**: the
+difference is extended mixes and radio edits, which carry a mix name and have no
+remixer (§7a).
+
+**F43 — the `- Topic` test is primary; duration does NOT catch lyric videos.**
+enumerating `ytsearch5:Arijit Singh Roke Na Ruke Naina`:
+
+```
+279s  Roke Na Ruke Naina Lyrical Video   T-Series
+279s  Arijit Singh - … (Lyrics Video)    PluginVibes     ← reupload
+279s  Roke Na Ruke Naina                 Arijit Singh
+123s  Roke Na Ruke Naina Full Video Song T-Series        ← short video edit
+135s  Roke Na Ruke Naina Video Song      T-Series
+```
+
+the library's audio release is **278s**. three of those videos are **279s —
+inside the ±5s tolerance.** an earlier revision of this spec claimed the duration
+gate was a sufficient backstop for music videos because "intro and outro push it
+clear"; that is **wrong for lyric videos**, which are the exact audio over a
+static image.
+
+so the defences are not interchangeable:
+
+- **metadata test (`- Topic` + `track`/`artist`/`album`) — necessary.** it is the
+  only thing that rejects a full-length lyric video. none of the five results
+  above is a `- Topic` upload.
+- **duration gate — partial.** it catches the 123s and 135s edits and nothing
+  else.
+
+none of these five would be admitted, but only because of the metadata test.
+
 **F8 — rate limits are gentler in practice than documented.**
 published Starter is 6 req/min ([musicfetch.io](https://musicfetch.io/) pricing,
 checked 2026-09-14). measured: **20 sequential requests at 1 req/s, all HTTP
@@ -1443,9 +1495,13 @@ reject  otherwise  →  retry via music.youtube.com, or refuse with a reason
 ```
 
 `categories: ['Music']` and `media_type: video` appear on **both** and must not
-be used. the duration gate (G7) is the backstop: a music video's intro and outro
-push it clear of the resolved recording's duration, so a video that slips past
-the metadata test still fails admission.
+be used.
+
+**the duration gate is not a sufficient backstop here (F43).** lyric videos carry
+the exact audio and land inside ±5s — measured at 279s against a 278s release.
+duration only catches truncated video edits. the `- Topic` metadata test is
+therefore **necessary**, not merely preferred, and a candidate that fails it is
+rejected even when its duration matches perfectly.
 
 **prefer `music.youtube.com` URLs.** given a plain `youtube.com` link, tier 0
 resolves the ISRC via musicfetch `/url` (F19) and then re-searches youtube music
