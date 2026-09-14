@@ -107,6 +107,7 @@ CREATE TABLE IF NOT EXISTS review (
   flag      TEXT NOT NULL,
   file      TEXT,
   proposed  TEXT,
+  current   TEXT,
   source    TEXT,
   PRIMARY KEY (audio_md5, flag)
 );

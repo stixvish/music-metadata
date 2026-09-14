@@ -101,3 +101,20 @@ def test_clearing_one_flag_leaves_the_other(client):
   client.store.resolve_review("a", "credit-disagreement")
 
   assert client.store.review_counts() == {"no-artwork": 1}
+
+
+def test_the_row_shows_the_current_value_beside_the_proposed_one(client):
+  """§14: a disagreement is not decidable from one side alone."""
+  client.store.put_review(
+    "abc",
+    "credit-disagreement",
+    "Calvin Harris - Sweet Nothing.aiff",
+    proposed="Calvin Harris",
+    current="Calvin Harris & Florence Welch",
+    source="musicbrainz",
+  )
+
+  body = client.get("/review").text
+
+  assert "Calvin Harris &amp; Florence Welch" in body
+  assert "musicbrainz" in body

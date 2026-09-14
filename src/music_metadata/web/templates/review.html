@@ -1,4 +1,5 @@
-{% extends "base.html" %} {% block title %}review · music-metadata{% endblock %}
+{% extends "base.html" %}
+{% block title %}review · music-metadata{% endblock %}
 {% block content %}
     <h1>review queue</h1>
     <p class="empty">
@@ -7,11 +8,14 @@
     </p>
     {% for gate, rows in groups.items() %}
         <section class="gate">
-            <h2>{{ gate }} <span class="count">{{ rows | length }}</span></h2>
+            <h2>
+                {{ gate }} <span class="count">{{ rows | length }}</span>
+            </h2>
             <table>
                 <thead>
                     <tr>
                         <th>track</th>
+                        <th>current</th>
                         <th>proposed</th>
                         <th>source</th>
                         <th></th>
@@ -21,6 +25,7 @@
                     {% for row in rows %}
                         <tr>
                             <td>{{ row.file }}</td>
+                            <td class="was">{{ row.current }}</td>
                             <td>{{ row.proposed }}</td>
                             <td class="src">{{ row.source }}</td>
                             <td>

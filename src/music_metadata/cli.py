@@ -286,14 +286,17 @@ def cmd_apply(args: argparse.Namespace) -> int:
       # §8's gates refuse to guess; each refusal becomes a queue entry rather
       # than a line in a log nobody reads (§14).
       store.resolve_review(probed.audio_md5)
-      for flag in resolved.flags:
-        store.put_review(
-          audio_md5=probed.audio_md5,
-          flag=flag,
-          file=probed.path.name,
-          proposed=resolved.tags.artist or "",
-          source=resolved.provenance.get("artist", ""),
-        )
+      if resolved.flags:
+        existing = read_tags(probed.path)
+        for flag in resolved.flags:
+          store.put_review(
+            audio_md5=probed.audio_md5,
+            flag=flag,
+            file=probed.path.name,
+            proposed=resolved.tags.artist or "",
+            current=existing.artist or "",
+            source=resolved.provenance.get("artist", ""),
+          )
 
       # §9: emit a fully tagged copy, leave the source untouched.
       destination = args.out / probed.path.name

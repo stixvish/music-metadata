@@ -78,6 +78,7 @@ def create_app(store: Store) -> FastAPI:
           "md5": row["audio_md5"],
           "file": row["file"],
           "proposed": row["proposed"] or "",
+          "current": row["current"] or "",
           "source": row["source"] or "",
         }
       )

@@ -355,6 +355,7 @@ class Store:
     flag: str,
     file: str,
     proposed: str = "",
+    current: str = "",
     source: str = "",
   ) -> None:
     """Queue a flagged track for review.
@@ -364,16 +365,19 @@ class Store:
       flag: the gate that raised it.
       file: the file's name, for the operator to recognise.
       proposed: the value the resolver would write.
+      current: the value it would replace. §14 puts the two side by side,
+        because a disagreement is not decidable from one of them alone.
       source: which source proposed it.
     """
     self.execute(
-      """INSERT INTO review (audio_md5, flag, file, proposed, source)
-         VALUES (?, ?, ?, ?, ?)
+      """INSERT INTO review (audio_md5, flag, file, proposed, current, source)
+         VALUES (?, ?, ?, ?, ?, ?)
          ON CONFLICT(audio_md5, flag) DO UPDATE SET
            file     = excluded.file,
            proposed = excluded.proposed,
+           current  = excluded.current,
            source   = excluded.source""",
-      (audio_md5, flag, file, proposed, source),
+      (audio_md5, flag, file, proposed, current, source),
     )
 
   def resolve_review(self, audio_md5: str, flag: str | None = None) -> None:
