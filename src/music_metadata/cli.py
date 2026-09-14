@@ -23,6 +23,7 @@ from music_metadata.config import DEFAULT_SIDECAR, load_env, require
 from music_metadata.output import Level, emit
 from music_metadata.probe import ProbedFile, probe_tree
 from music_metadata.release import ReleaseCandidate, choose_release
+from music_metadata.sources.base import SourceError
 from music_metadata.sources.musicbrainz import (
   MusicBrainz,
   Work,
@@ -161,7 +162,7 @@ def cmd_resolve(args: argparse.Namespace) -> int:
 
     spotify = Spotify(require("SPOTIFY_CLIENT_ID"), require("SPOTIFY_CLIENT_SECRET"))
     musicbrainz = MusicBrainz()
-    fetched = cached = mb_hits = mb_misses = 0
+    fetched = cached = mb_hits = mb_misses = mb_errors = 0
     try:
       for index, row in enumerate(rows, start=1):
         isrc = row["isrc_from_tag"]
@@ -173,16 +174,30 @@ def cmd_resolve(args: argparse.Namespace) -> int:
         result = spotify.search_isrc(isrc)
         store.put_raw(isrc, "spotify", result.raw)
 
-        # tier 2. a miss here is normal (F31) and never blocks the track.
-        recording, raw_mb = musicbrainz.recording_for_isrc(isrc)
-        store.put_raw(isrc, "musicbrainz", raw_mb)
+        # tier 2. a miss here is normal (F31), and so is the service being
+        # briefly unavailable — musicbrainz 503s routinely (F30/F52). neither
+        # may abort the run: §5's rule that a flaky tier cannot stop the
+        # pipeline is not specific to beatport, and losing an hour of resolved
+        # identities to one bad minute would be the expensive failure.
+        recording = None
+        try:
+          recording, raw_mb = musicbrainz.recording_for_isrc(isrc)
+          store.put_raw(isrc, "musicbrainz", raw_mb)
+        except SourceError as exc:
+          mb_errors += 1
+          emit(f"  musicbrainz unavailable for {isrc}: {exc}", level=Level.WARN)
+
         if recording is None:
           mb_misses += 1
         else:
           mb_hits += 1
           if recording.work_id:
-            _, raw_work = musicbrainz.work(recording.work_id)
-            store.put_raw(isrc, "work", raw_work)
+            try:
+              _, raw_work = musicbrainz.work(recording.work_id)
+              store.put_raw(isrc, "work", raw_work)
+            except SourceError as exc:
+              mb_errors += 1
+              emit(f"  musicbrainz work failed for {isrc}: {exc}", level=Level.WARN)
 
         fetched += 1
         credited = "credit" if recording else "no-credit"
@@ -195,7 +210,7 @@ def cmd_resolve(args: argparse.Namespace) -> int:
       musicbrainz.close()
 
     emit(f"resolved {fetched} fetched, {cached} already cached")
-    emit(f"musicbrainz {mb_hits} found, {mb_misses} missing")
+    emit(f"musicbrainz {mb_hits} found, {mb_misses} missing, {mb_errors} unavailable")
   return 0
 
 

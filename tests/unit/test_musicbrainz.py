@@ -277,3 +277,28 @@ def test_an_unrelated_relation_is_ignored():
   work, _ = make(handler).work("x")
 
   assert work.composers == () and work.lyricists == () and work.writers == ()
+
+
+def test_persistent_unavailability_raises_rather_than_reporting_a_miss():
+  """a run must be able to tell 'musicbrainz has nothing' from 'it is down'.
+
+  reporting a service outage as a miss would silently drop credits for tracks
+  musicbrainz actually has, which is exactly F30's failure.
+  """
+  from music_metadata.sources.base import SourceError
+
+  with pytest.raises(SourceError, match="503"):
+    make(lambda r: httpx.Response(503)).recording_for_isrc("X")
+
+
+def test_it_retries_more_than_the_default_because_503_is_routine():
+  attempts = []
+
+  def handler(request):
+    attempts.append(1)
+    return httpx.Response(503)
+
+  with pytest.raises(Exception, match="503"):
+    make(handler).recording_for_isrc("X")
+
+  assert len(attempts) == 5

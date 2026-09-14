@@ -142,6 +142,9 @@ class MusicBrainz:
       headers={"User-Agent": USER_AGENT},
       transport=transport,
       sleep=sleep,
+      # measured: 503 "currently busy" is routine, not exceptional. more
+      # attempts here is cheaper than losing a credit the service does have.
+      retries=5,
     )
 
   def close(self) -> None:
