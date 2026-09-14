@@ -328,6 +328,72 @@ to overwrite a working cookie file with one that fails verification.**
 the yt-dlp wiki notes that using a personal account for downloads carries a ban
 risk. the operator has accepted this.
 
+**F21 — every remix carries its own ISRC.** confirmed against the 10 `Blessings`
+variants in the library: 10 distinct ISRCs → **10 distinct musicfetch results**,
+each naming its own remixer. remix identity is therefore *free* — it falls out of
+the ISRC and needs no fuzzy title matching.
+
+```
+GBARL2500591  Blessings                      (original)
+GBARL2501117  Blessings - CamrinWatsin Remix
+GBARL2501127  Blessings - Odd Mob Remix
+…             10 of 10 distinct
+```
+
+**F22 — beatport supports exact ISRC lookup, so musicfetch's link is not needed.**
+`/v4/catalog/tracks/?isrc={ISRC}` returns `count: 1` and an exact match:
+
+```
+?isrc=GBARL2500759  →  Blessings / Max Styler Remix / GBARL2500759   exact
+```
+
+(only `isrc` works; `isrc_exact`, `isrc__eq` and `q` are silently ignored and
+return the unfiltered catalogue — a param typo looks like a result, so the
+returned ISRC must always be compared, never assumed.)
+
+**F23 — musicfetch's beatport link is demonstrably wrong on a real track.**
+for `GBARL2500591` (Blessings, original) musicfetch returned beatport id
+`20462394`. that id is **Blessings — Extended Mix, ISRC `GBARL2500592`**: a
+different recording. beatport's own ISRC lookup for `GBARL2500591` returns
+**zero results** — the track is not on beatport at all, and musicfetch supplied
+a plausible-looking neighbour instead.
+
+this is the F9 failure mode caught in the act, and it would have silently tagged
+a radio edit with the extended mix's metadata. **tier 3 therefore queries
+beatport by ISRC directly and ignores `services.beatport` entirely.**
+
+coverage cost is real and worth stating: of the 10 `Blessings` variants, **only
+1 had a musicfetch beatport link, and that one was wrong.** the nine remixes —
+the most DJ-relevant tracks in the set — are simply not on beatport under those
+ISRCs.
+
+**F24 — beatport's data model already encodes the remixer rule.**
+`mix_name` and `remixers` are separate fields, and `remixers` is empty exactly
+where it should be:
+
+```
+Blessings / "Extended Mix"      remixers: []              ← not a remix
+Blessings / "Max Styler Remix"  remixers: ["Max Styler"]  ← a remix
+```
+
+so when a verified beatport match exists, remixer and mix name are read
+directly rather than parsed out of a title (§7a).
+
+**F25 — the library's existing tag convention is already close to the target.**
+a remix in the library today carries:
+
+```
+title         Blessings [Odd Mob Remix]
+TPE4          Odd Mob              ← remixer
+TIT3          Odd Mob Remix        ← mix name
+artist        Calvin Harris, Clementine Douglas & Odd Mob
+album_artist  Calvin Harris & Clementine Douglas
+```
+
+and the original carries **no `TPE4`/`TIT3` at all** — correct. apple and spotify
+instead use a `" - {X} Remix"` suffix on `name`, so their titles must be parsed
+into title + mix name before writing (§7a).
+
 **F8 — rate limits are gentler in practice than documented.**
 published Starter is 6 req/min ([musicfetch.io](https://musicfetch.io/) pricing,
 checked 2026-09-14). measured: **20 sequential requests at 1 req/s, all HTTP
@@ -371,9 +437,9 @@ Music.** all three misses were bollywood. subject to F9.
         ▼
   ┌───────────────────────────────────────────────┐
   │ tier 1 · musicfetch /isrc          [PAID]     │
-  │ identity · apple genre · artwork url          │
-  │ releaseDate · label · album · artists · UPC   │
-  │ → appleMusic.id ─┐        → beatport.id ─┐    │
+  │ ROUTER ONLY — service ids, not field values   │
+  │ (its own name/genres/dates are not written)   │
+  │ → appleMusic.id ─┐        ISRC ──────────┐    │
   └──────────────────┼──────────────────────┼────┘
                      ▼                      ▼
   ┌──────────────────────────┐  ┌───────────────────────────┐
@@ -461,31 +527,100 @@ feature in the deck display. **needs a decision** (§12).
 
 | field | 1st | 2nd | 3rd |
 |---|---|---|---|
-| title | musicfetch `name` | itunes `trackName` | filename parse |
+| title | **itunes `trackName`** (parsed, §7a) | spotify | filename parse |
 | artist | **musicbrainz artist-credit** (§6) | filename parse | itunes `artistName` |
-| album | musicfetch `albums[0].name` | itunes `collectionName` | — |
-| album artist | **main artists only** (§6) | musicfetch `albums[0].artists` | artist |
+| album | **itunes `collectionName`** | spotify | — |
+| album artist | **main artists only** (§6, §7a) | itunes `artistName` | artist |
 | track number | **itunes `trackNumber`** (F3) | — | — |
 | disc number | **itunes `discNumber`** (F3) | — | — |
-| release date | musicfetch `releaseDate` | itunes `releaseDate` | — |
+| release date | **itunes `releaseDate`** | beatport `publish_date` | — |
 | year | derived from release date | — | — |
-| **genre** | **beatport `sub_genre` if present, else `genre`** (F13) | musicfetch `genres[0]` | existing tag |
+| **genre** | **beatport `sub_genre` if present, else `genre`** (F13) | itunes `primaryGenreName` | existing tag |
 | artwork | apple master at configured size (F5) | existing embedded art | — |
-| label | musicfetch `label` | — | — |
+| label | beatport `release.label` | itunes | — |
 | bpm | **beatport `bpm`** (F14, 100% coverage) | — | — |
 | key | **beatport `key`** (F14, 100% coverage) | — | — |
-| mix name | beatport `mix_name` | filename bracket | — |
+| mix name (`TIT3`) | beatport `mix_name` (F24) | parsed from itunes title | filename bracket |
+| remixer (`TPE4`) | beatport `remixers` (F24) | parsed from mix name | — |
 | ISRC | the file's own tag | musicfetch `isrc` | — |
+
+## 7a. naming and tag shape
+
+**title format.** one canonical shape, in this order:
+
+```
+{Name} (ft. {Featured artists}) [{Mix name}]
+```
+
+- the **parenthetical** carries featured artists only, comma-separated
+- the **bracket** carries the mix name only
+- either part is omitted when it does not apply; the bare name is the common case
+
+```
+Blessings (ft. Clementine Douglas)
+Blessings [Odd Mob Remix]
+Blessings (ft. Clementine Douglas) [Extended]
+```
+
+**apple and spotify must be parsed, not copied.** they render mixes as a suffix
+on `name` — `"Blessings - Odd Mob Remix"` (F25) — and features sometimes inside
+`trackName`, sometimes folded into `artistName` (§6). the resolver splits both
+apart and re-renders in the shape above. **no source's title string is written
+verbatim.**
+
+**remixer (`TPE4`) and mix name (`TIT3`).**
+
+- `TIT3` holds the mix name whenever one exists — `Odd Mob Remix`, `Extended`,
+  `Radio Edit`, `Club Mix`.
+- `TPE4` holds the remixer **only when the track is a remix by a third party.**
+- **an extended mix is not a remix.** `Extended`, `Extended Mix`, `Radio Edit`,
+  `Club Mix`, `Original Mix` and `Instrumental` set `TIT3` and leave `TPE4`
+  empty — the original artist reworking their own track is not a remixer.
+- beatport's `remixers` array decides this directly when a verified match exists
+  (F24); otherwise the remixer is the name preceding `Remix`/`Flip`/`Bootleg`/
+  `VIP` in the mix name.
+
+**mix-name normalisation.** the library currently holds both `[extended mix]`
+(12×) and bare `[extended]`. one spelling wins:
+
+| observed | normalised |
+|---|---|
+| `Extended Mix`, `Extended Version`, `Extended` | **`Extended`** |
+| `Radio Edit`, `Radio Mix`, `Radio Version` | **`Radio Edit`** |
+| `Original Mix`, `Original Version` | **`Original`** |
+| `{X} Remix`, `{X} Edit`, `{X} Flip`, `{X} VIP` | unchanged, `{X}` → `TPE4` |
+| `Continuous Mix`, `Instrumental`, `Club Mix` | unchanged |
+
+`Original` is written to `TIT3` only when the source states it; it is never
+invented for a track that simply has no mix name.
+
+**artist vs album artist.** features live in the *title*, so:
+
+- `artist` — **main artists only**, plus the remixer when there is one
+  (matching F25's existing `Calvin Harris, Clementine Douglas & Odd Mob`)
+- `album artist` — **main artists only**, never the remixer, never a feature
+- featured artists appear **only** in the title parenthetical
+
+this is why §6's main/featured split is load-bearing: get it wrong and a feature
+is promoted into `album artist`, which fragments the album in rekordbox.
+
+**OQ-7 — separator style.** the library currently mixes `&` and `,` in artist
+strings (`Calvin Harris & Clementine Douglas` vs `Calvin Harris, Clementine
+Douglas & Odd Mob`). serato and rekordbox both treat the field as one opaque
+string, so this is cosmetic — but it should be *consistently* cosmetic. proposed:
+comma-separate all but the last, `&` before the last. **needs confirmation.**
+
 
 ## 8. gates — a stage is not done until these pass
 
 - **G1 identity.** ≥95% of the 1,439 ISRC tracks resolve to a musicfetch result.
   measured baseline: 20/20.
 - **G2 completeness.** ≥98% of resolved tracks carry all eight required fields.
-- **G3 beatport ISRC agreement.** a beatport record is accepted only when its
-  `isrc` equals the ISRC we looked up (F12). on mismatch the record is
-  **discarded and genre falls back to tier 1**. measured baseline: 16/17.
-  the mismatch rate is reported by `verify`, never assumed.
+- **G3 beatport ISRC agreement.** beatport is queried **by ISRC** (F22), never
+  via musicfetch's link (F23). the returned `isrc` is still compared to the one
+  sent, because an unsupported filter param returns the unfiltered catalogue
+  rather than an error. zero results is a normal outcome — genre falls back to
+  itunes — not a failure.
 - **G6 artist-credit agreement.** musicbrainz and the filename agree on the
   main/featured split for ≥95% of the 418 featured tracks. disagreements are
   queued for review, never auto-resolved.
@@ -551,14 +686,14 @@ library once it carries an ISRC *and* that ISRC's resolved duration is within
 wrong match, and youtube is full of edits, sped-up versions and live cuts that
 resolve confidently to the studio recording. measured baseline: 8/8 resolved.
 
-**OQ-6 — lossy source, lossless container.** the source is **AAC at ~257 kbps**
+**OQ-6 (decided) — lossy source, lossless container.** the source is **AAC at ~257 kbps**
 (measured across `.staging`, and reachable only with valid premium cookies —
 F20); the library is AIFF. the conversion costs **5.4×**
 storage — 9.5 GB → 51.9 GB measured — and **adds no quality**, since nothing is
 recoverable that the AAC encoder discarded. the existing 1,494 files are already
-converted and are not in scope to revisit. the open question is **new**
-acquisitions: keep AIFF for consistency with the current library and DJ-app
-behaviour, or keep M4A and convert only what gets played out. needs a decision.
+converted and are not in scope to revisit. ~~the open question is **new** acquisitions.~~ **decided: convert to AIFF**, for
+consistency with the existing 1,494 files and DJ-app behaviour. the 5.4× cost is
+accepted deliberately, not by omission.
 
 
 ## 11. non-goals (v1)
@@ -615,19 +750,19 @@ live APIs, marked and excluded from the default run.
 
 ## 13. open questions
 
-- **OQ-1 artwork size.** 1400² is free and needs no URL rewriting; 3000² costs
-  ~4.3 GB across the library and relies on undocumented substitution (F5); 4500²
-  costs ~9.4 GB. rekordbox and serato display far smaller. **recommendation:
-  3000², with 1400² as the no-rewrite fallback.** needs a decision.
+- ~~**OQ-1 artwork size.**~~ **decided: 3000×3000.** ~4.3 GB across the library;
+  the 4500² ceiling is not worth the extra 5 GB. falls back to 1400² (the
+  no-rewrite size musicfetch returns) when the 3000² substitution fails.
 - ~~**OQ-2 beatport auth.**~~ **resolved by live capture** — F11. session-cookie
   → token minting is verified working against the operator's account.
-- **OQ-5 official beatport credentials.** worth requesting from an account
-  manager — a 10-hour token with refresh beats re-minting every 8 minutes. it is
-  a business request, not a blocker: `CookieSessionProvider` ships meanwhile and
-  the swap is one class (F15).
-- **OQ-4 tag shape for features.** option A (feature in title) or B (feature in
-  artist) — see §6. **recommendation: A**, it sorts correctly in rekordbox and
-  matches what itunes already does for most releases.
-- **OQ-3 remix identity.** does an ISRC on a remix resolve to the remix or the
-  original? F9 says beatport matching is fuzzy; the library is full of remixes.
-  measure before trusting beatport genre on them.
+- **OQ-7 artist separator style.** comma-separate all but the last, `&` before
+  the last? cosmetic but should be consistent (§7a).
+- **OQ-5 official beatport credentials.** the operator will supply client id and
+  secret via `.env` when obtained. `OAuthClientProvider` reads them;
+  `CookieSessionProvider` runs until then (F15). not a blocker.
+- ~~**OQ-4 tag shape.**~~ **decided** — fully specified in §7a:
+  `{Name} (ft. {Features}) [{Mix}]`, `TPE4` remixer only for third-party remixes,
+  `TIT3` mix name always, `Extended Mix` → `Extended`.
+- ~~**OQ-3 remix identity.**~~ **resolved by measurement (F21)** — every remix
+  carries its own ISRC; 10 of 10 `Blessings` variants resolved distinctly. no
+  title matching needed.
