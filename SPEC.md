@@ -1023,6 +1023,43 @@ than the 151k non-premium alternative if AAC is ever unavailable.
 *measured on one track. the finding is a decision input, not a claim about every
 encode on youtube.*
 
+**F50 — AIFF cannot hold AAC; the conversion is a decode, not a remux.** this
+matters because it determines what the 5.4x storage cost is actually buying.
+
+```
+ffmpeg -i source.m4a -c:a copy -y out.aiff
+  [aiff] block align not set
+  [out#0/aiff] Could not write header (incorrect codec parameters ?)
+```
+
+**AIFF is a PCM container.** there is no "put the AAC into an AIFF" operation —
+the AAC is decoded to PCM and the PCM is stored:
+
+```
+source  aac, fltp (float planar), 44100 Hz, stereo
+output  pcm_s16be, s16,           44100 Hz, stereo     ← matches the existing library exactly
+```
+
+**the decode is faithful.** the decoded-audio md5 of a freshly converted AIFF
+equals the decoded-audio md5 of the source m4a (`bae6e47a…`, the same value
+recorded in F20) — the AIFF contains precisely what the AAC decodes to, with no
+resampling and nothing added.
+
+**so the conversion buys metadata, not audio quality.** it cannot improve on the
+lossy source (F49), and it costs **5.4x** — 5.0 MB → 27 MB on the measured track,
+consistent with the library-wide 9.5 GB → 51.9 GB (OQ-6).
+
+what it buys is real: **AIFF carries ID3, and both DJ apps read it.** the
+existing library proves the full frame set survives — `TPE4`, `TIT3`, `TSRC`,
+`TPUB` are all present and readable (F25, F42). M4A stores metadata in MP4 atoms,
+where rekordbox and serato support for the DJ-specific frames is inconsistent.
+**that compatibility is the entire justification for the storage cost, and it is
+a sufficient one.**
+
+**16-bit, not 24.** the source decodes to float, but the existing 1,494 files are
+`pcm_s16be` and a lossy source carries no information that a 24-bit store would
+preserve. 16/44.1 matches the library and costs 33% less than 24-bit.
+
 **F8 — rate limits are gentler in practice than documented.**
 published Starter is 6 req/min ([musicfetch.io](https://musicfetch.io/) pricing,
 checked 2026-09-14). measured: **20 sequential requests at 1 req/s, all HTTP
@@ -1866,9 +1903,11 @@ resolve confidently to the studio recording. measured baseline: 8/8 resolved.
 F20); the library is AIFF. the conversion costs **5.4×**
 storage — 9.5 GB → 51.9 GB measured — and **adds no quality**, since nothing is
 recoverable that the AAC encoder discarded. the existing 1,494 files are already
-converted and are not in scope to revisit. ~~the open question is **new** acquisitions.~~ **decided: convert to AIFF**, for
-consistency with the existing 1,494 files and DJ-app behaviour. the 5.4× cost is
-accepted deliberately, not by omission.
+converted and are not in scope to revisit. ~~the open question is **new** acquisitions.~~ **decided: convert to AIFF**
+(`pcm_s16be`, 44.1 kHz), for **metadata compatibility** — AIFF carries ID3 and
+both DJ apps read the full frame set (F50). the 5.4× cost is accepted
+deliberately: it buys tag support, not audio quality, and the conversion is a
+faithful decode of the AAC rather than a container swap.
 
 
 ## 10a. premium cookies — sourcing and placement
