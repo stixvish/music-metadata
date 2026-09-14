@@ -98,3 +98,61 @@ docs(spec): record beatport api host is not cloudflare-fronted
   with `GH007: your push would publish a private email address`.
 - if a commit is ever authored wrongly, fix it **before pushing** — rewriting
   published history is a different and worse problem.
+
+## style, linting, formatting
+
+**this is the only place tooling and style live.** `SPEC.md` describes what we
+build and what the code must do; it never specifies indentation, lint rules, or
+which formatter runs. if a style rule appears in the spec, it is in the wrong
+file.
+
+- **google python style guide**, with one deliberate deviation: **2-space
+  indentation**, not 4.
+- `snake_case` functions and variables, `PascalCase` classes, `UPPER_SNAKE`
+  constants. never impose the lowercase prose style on identifiers.
+- **type hints on every public function.** `mypy` runs in strict mode on `src/`.
+- docstrings on modules and public functions, google style (`Args:`/`Returns:`).
+- comments explain *why*, never *what*.
+
+**ruff is both linter and formatter.** one tool, no black, no isort, no flake8.
+
+```toml
+[tool.ruff]
+indent-width = 2
+line-length  = 88
+src          = ["src", "tests"]
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E","W","F","I","N","D","UP","B","A","C4","RET","SIM","ARG","PTH","ANN","S","T20"]
+ignore = ["D203","D213","ANN101","ANN102"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["D","ANN","S101"]   # asserts and undocumented fixtures are fine in tests
+
+[tool.ruff.format]
+indent-style = "space"
+quote-style  = "double"
+```
+
+`T20` bans stray `print` in `src/` — the CLI writes through a single output
+module so the web ui (`SPEC.md` §14) can capture the same messages. `S` catches
+the security footguns that matter here: `subprocess` without a list, `requests`
+without a timeout.
+
+**checks run in this order, and all must pass before a commit:**
+
+```
+ruff format --check .
+ruff check .
+mypy src/
+pytest -q
+```
+
+**never silence a check to get to green.** no new `# noqa`, `# type: ignore`, or
+`@pytest.mark.skip` without a comment naming the reason and, where it is
+temporary, the condition for removing it. a suppression added to make a commit
+pass is a defect, not a fix.

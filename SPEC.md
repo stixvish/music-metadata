@@ -1366,6 +1366,76 @@ with no signal that anything went wrong.
 **3-4 GB** added to the output tree, consistent with OQ-1's estimate.
 
 
+## 7d. the complete field set
+
+every tag this project writes, its ID3 frame, and where it comes from. **nothing
+outside this table is written.**
+
+| field | frame | source | coverage |
+|---|---|---|---|
+| title | `TIT2` | spotify chosen release, re-rendered per §7a | 100% |
+| artist | `TPE1` | musicbrainz artist-credit (performers-only in indian scope) | 100% |
+| album | `TALB` | spotify chosen release (§7b) | ~100% |
+| album artist | `TPE2` | chosen release, main artists only | ~100% |
+| year | `TDRC` | **earliest** release across all releases (F33) | ~100% |
+| release date | `TDRL` | same, full date | ~100% |
+| track number | `TRCK` | chosen release `track_number` (F32) | ~100% |
+| disc number | `TPOS` | chosen release `disc_number` (F32) | ~100% |
+| genre | `TCON` | beatport where listed, else itunes | 100% |
+| label | `TPUB` | beatport `release.label`, else itunes | ~72% today |
+| ISRC | `TSRC` | the file's own tag, once G10 trusts it | 96.3% |
+| **mix name** | `TIT3` | beatport `mix_name`, else parsed from title | remixes + edits |
+| **remixer** | `TPE4` | parsed from mix name, beatport confirms | third-party remixes only |
+| **original artist** | `TOPE` | the chosen release's artist, when a remixer exists | remixes only |
+| **composer** | `TCOM` | musicbrainz work → composer | indian scope |
+| **lyricist** | `TEXT` | musicbrainz work → lyricist | indian scope |
+| **BPM** | `TBPM` | beatport only (§7e) | **partial** |
+| **key** | `TKEY` | beatport only (§7e) | **partial** |
+| artwork | `APIC` | verified chain §7c at 3000² | ~100% |
+
+**`TOPE` (original artist) is new and only meaningful on remixes.** on
+`Blessings [Odd Mob Remix]` it holds `Calvin Harris, Clementine Douglas` while
+`TPE1` holds those plus `Odd Mob` and `TPE4` holds `Odd Mob`. on a non-remix it
+is **not written at all** — an empty `TOPE` is noise, and rekordbox shows the
+column regardless.
+
+**composer and lyricist are written wherever musicbrainz supplies them**, not
+only in indian scope. the *indian scope* rule (§7a, F38) governs who is excluded
+from `TPE1`, not who gets a `TCOM`. a western track with a known composer gets
+one; it is simply rarer that musicbrainz has it and rarer still that it differs
+from the artist.
+
+## 7e. BPM and key — the honest coverage problem
+
+**neither exists in the library today** (F42: zero `TBPM`, zero `TKEY` across
+1,494 files), and beatport is the only source in this stack that has them.
+
+**beatport gives both at 100% of matches (F14) — but matches are the constraint.**
+sampled coverage was 17/20 on mainstream tracks and **0/9 by ISRC** on the
+`Blessings` remixes (F22), where a name+mix search was needed. for bollywood,
+beatport coverage is effectively nil. so realistic coverage is **good for dance,
+poor for hip-hop, near-zero for indian repertoire**.
+
+**discogs does not fill this gap.** it has **no BPM or key fields** at all — the
+recommended place for BPM is free-text release notes
+([discogs forum, checked 2026-09-14](https://www.discogs.com/forum/thread/412239)).
+tools that appear to offer it combine discogs with echonest (**defunct**) or
+acousticbrainz (**frozen**). discogs is still worth an API key for **style**
+(a deeper taxonomy than itunes genre), **label**, **catalog number** and
+**credits** — but not for BPM or key. recorded as OQ-10.
+
+**the only route to full coverage is local analysis**, and nothing for it is
+installed today (no `librosa`, `essentia`, `aubio`; only `chromaprint`). that is
+a real dependency decision, not a small one — `essentia` is ~120 MB.
+
+**and it may not be worth it.** rekordbox computes its own BPM and key during
+analysis and prefers its own values over tags, so a computed `TBPM` mainly buys
+sorting in serato and in this project's own ui. **recommendation: write BPM and
+key only where beatport supplies them, leave them empty otherwise, and revisit
+local analysis once the library is otherwise correct.** an empty field is honest;
+a guessed one gets trusted. recorded as OQ-11.
+
+
 ## 8. gates — a stage is not done until these pass
 
 - **G1 identity.** ≥95% of the 1,439 ISRC tracks resolve to a musicfetch result.
@@ -1669,16 +1739,16 @@ src/music_metadata/
   acquire.py        # tier 0 — yt-dlp + /url identity (§10)
   probe.py          # ffprobe → local tag facts
   sources/
-    musicfetch.py   # tier 1 — identity + service ids
-    itunes.py       # tier 2 — track/disc number
+    musicfetch.py   # tier 0 only — youtube url -> isrc (F36)
+    itunes.py       # artwork + genre fallback (F32/F37)
     musicbrainz.py  # tier 2 — artist-credit roles (§6)
-    spotify.py      # tier 2 — release selection by ISRC (§7b)
+    spotify.py      # tier 1 — release selection, track/disc (§7b)
     beatport.py     # tier 3 — genre/bpm/key
     bp_auth.py      # pluggable TokenProvider: cookie | oauth (F15)
     ratelimit.py    # token bucket, 20/min (F8)
   credit.py         # §6 main vs featured split
   arbitrate.py      # §7 precedence
-  artwork.py        # fetch + size policy (§11 OQ-1)
+  artwork.py        # verified chain, 3000² (§7c)
   tag.py            # ID3-on-AIFF writer, preserves foreign frames
   library_map.py    # library.toml: generate, merge, read back (§9b)
   store.py          # sidecar cache (sqlite, shared with the web ui)
@@ -1690,8 +1760,18 @@ src/music_metadata/
 tests/{unit,integration}/
 ```
 
-python ≥3.12 · `uv` · `mutagen` · `httpx` · `pydantic` v2 · `ruff` · `mypy` ·
-`pytest`. google style, 2-space indent.
+**runtime stack.** python ≥3.12, managed with `uv`. `mutagen` for ID3-on-AIFF
+(the only library that writes AIFF ID3 chunks correctly), `httpx` for HTTP with
+timeouts and retries, `pydantic` v2 for the source response models, `fastapi` +
+`uvicorn` for the ui (§14), `sqlite3` from the stdlib for the sidecar, `yt-dlp`
+and `ffmpeg` for tier 0. external binaries: `ffprobe`, `ffmpeg`, `fpcalc`.
+
+python because the three things this project does — tagging (`mutagen`),
+youtube acquisition (`yt-dlp`), and audio fingerprinting (`chromaprint`) — all
+have their reference implementations there, and two of them are already
+installed and working on this machine.
+
+**style, linting and formatting live in `CLAUDE.md`, not here.**
 
 ```
 music-metadata acquire URL           # tier 0 — download + resolve identity
@@ -1699,7 +1779,7 @@ music-metadata probe                 # local tag survey, no network
 music-metadata resolve [--limit N]   # tiers 1-3 → sidecar
 music-metadata diff                  # proposed changes, old → new
 music-metadata apply --out DIR       # write tagged copies
-music-metadata verify --out DIR      # assert G1-G5
+music-metadata verify --out DIR      # assert G1-G11
 ```
 
 **testing.** every source has recorded-fixture unit tests — the probe responses
@@ -1728,6 +1808,12 @@ live APIs, marked and excluded from the default run.
   stripping needed.
 - ~~**OQ-7 artist separator style.**~~ **decided:** comma between every artist,
   `&` before the last (§7a).
+- **OQ-10 discogs.** worth an API key for style, label, catalog number and
+  credits — **not** for BPM or key, which it does not have (§7e). the operator
+  can add `DISCOGS_TOKEN` to `.env`. low priority: it adds depth, not coverage.
+- **OQ-11 local BPM/key analysis.** ~120 MB of dependencies for fields rekordbox
+  recomputes anyway. **recommendation: defer** — write beatport's values, leave
+  the rest empty, revisit when the library is otherwise correct.
 - **OQ-5 official beatport credentials.** the operator will supply client id and
   secret via `.env` when obtained. `OAuthClientProvider` reads them;
   `CookieSessionProvider` runs until then (F15). not a blocker.
