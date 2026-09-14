@@ -67,8 +67,12 @@ ignore = ["D203", "D213"]
 convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
-# asserts and undocumented fixtures are fine in tests
-"tests/*" = ["D", "ANN", "S101"]
+# asserts and undocumented fixtures are fine in tests. S603/S607: the fixtures
+# shell out to ffmpeg to build real audio, with literal argument lists and no
+# shell — the same reasoning that exempts tools/. ARG: a mock transport handler
+# takes the request whether or not the test looks at it. S105/S106: fake
+# credentials in fixtures are the point, not a leak.
+"tests/*" = ["D", "ANN", "S101", "S603", "S607", "ARG", "S105", "S106"]
 # tools/ holds standalone operator scripts, not library code. CLAUDE.md scopes
 # T20 to src/ precisely because the CLI there writes through an output module;
 # these scripts print as their entire interface. their subprocess calls pass
@@ -84,15 +88,18 @@ python_version = "3.12"
 strict         = true
 files          = ["src"]
 
-# these ship no type stubs
+# mutagen ships py.typed, so its types are real — but its ID3 frame
+# constructors carry no annotations, and strict mode counts every one as an
+# untyped call. the rule is switched off only in the module that touches them.
 [[tool.mypy.overrides]]
-module                 = ["mutagen.*"]
-ignore_missing_imports = true
+module                 = ["music_metadata.tag"]
+disallow_untyped_calls = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-# `live` hits real apis; excluded from every ordinary run (SPEC.md §12).
-addopts = "-m 'not live'"
+# `live` hits real apis and `slow` decodes the whole library; both are excluded
+# from every ordinary run and selected explicitly (SPEC.md §12).
+addopts = "-m 'not live and not slow'"
 markers = [
   "live: hits the real apis. excluded from the default run (SPEC.md §12)",
   "slow: seconds, not milliseconds",
@@ -101,5 +108,9 @@ markers = [
 [tool.coverage.report]
 # the pure modules carry the decisions the spec argued hardest about, so they
 # are held to a hard bar. each is added here as it is built (tasks/todo.md).
-include    = ["src/music_metadata/output.py"]
+include = [
+  "src/music_metadata/output.py",
+  "src/music_metadata/release.py",
+  "src/music_metadata/naming.py",
+]
 fail_under = 90

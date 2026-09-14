@@ -136,7 +136,7 @@ ignore = ["D203","D213"]
 convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["D","ANN","S101"]   # asserts and undocumented fixtures are fine in tests
+"tests/*" = ["D","ANN","S101","S603","S607","ARG","S105","S106"]  # asserts, fixtures, ffmpeg, mock args, fake creds
 "tools/*" = ["T20","ANN","D","S603","S607"]   # standalone operator scripts, not library code
 
 [tool.ruff.format]

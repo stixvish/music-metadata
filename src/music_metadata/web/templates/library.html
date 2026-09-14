@@ -1,6 +1,10 @@
 {% extends "base.html" %} {% block title %}library · music-metadata{% endblock %}
 {% block content %}
     <h1>library</h1>
+    <div class="actions">
+        <button hx-post="/resolve" hx-target="#job" hx-swap="innerHTML">resolve</button>
+    </div>
+    <div id="job"></div>
     {% if files %}
         <table>
             <thead>
