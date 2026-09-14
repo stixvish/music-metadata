@@ -1,0 +1,39 @@
+# library.toml — the map. one entry per file, keyed by decoded-audio md5.
+# regenerated every run. `source = "manual"` lines are preserved verbatim.
+
+["8ab13f549542ec73ee5d8da7c62dd6a4"]
+file     = "*NSYNC - Bye Bye Bye.aiff"
+title    = "Bye Bye Bye"
+artist   = "*NSYNC"
+album    = "No Strings Attached"
+isrc     = "USJI10000001"
+spotify  = "https://open.spotify.com/track/62bOmKYxYg7dhrC6gH9vFn"
+itunes   = "https://music.apple.com/us/album/303171298"
+beatport = "https://beatport.com/track/bye-bye-bye/20819013"
+
+["446fd65a7c0be5bd83448b5a04bb7035"]
+file     = "Calvin Harris, Clementine Douglas & Odd Mob - Blessings [Odd Mob Remix].aiff"
+title    = "Blessings - Odd Mob Remix"
+artist   = "Calvin Harris, Clementine Douglas, Odd Mob"
+album    = "Blessings - The Remixes (Part 2)"
+isrc     = "GBARL2501127"
+spotify  = "https://open.spotify.com/track/1Z2HuPvdKhdlIbHst99MnR"
+itunes   = "https://music.apple.com/us/album/1829498271"
+beatport = ""        # not found
+
+["36b3b3860207481d40fc0b85d98e430c"]
+file     = "Arijit Singh - Roke Na Ruke Naina.aiff"
+title    = "Roke Na Ruke Naina"
+artist   = "Arijit Singh, Amaal Mallik, Kumaar"
+album    = "Badrinath Ki Dulhania"
+isrc     = "INS181700238"
+spotify  = "https://open.spotify.com/track/2k7RoJQR0mi8WVWK0Och93"
+itunes   = "https://music.apple.com/us/album/1205913413"
+beatport = ""        # not found
+
+["88a0bc73ae97ee9c7744de964e5abf8e"]
+file     = "A$AP Rocky - Fuckin' Problems (ft. Drake, 2 Chainz & Kendrick Lamar).aiff"
+isrc     = ""      # none - paste a spotify url below
+spotify  = ""        # not found
+itunes   = ""        # not found
+beatport = ""        # not found
