@@ -22,12 +22,28 @@ from music_metadata.arbitrate import Resolved, arbitrate
 from music_metadata.config import DEFAULT_SIDECAR, load_env, require
 from music_metadata.output import Level, emit
 from music_metadata.probe import ProbedFile, probe_tree
-from music_metadata.release import ReleaseCandidate
+from music_metadata.release import ReleaseCandidate, choose_release
 from music_metadata.sources.spotify import Spotify, candidates_from_raw
 from music_metadata.store import Store
 from music_metadata.tag import Tags, read_tags, write_tags
 
 DEFAULT_LIBRARY = Path.home() / "Music/library"
+
+
+def _candidates_for(store: Store, probed: ProbedFile) -> list[ReleaseCandidate]:
+  """Re-parse the cached spotify payload for one track. No network.
+
+  Args:
+    store: the sidecar.
+    probed: the file's local facts.
+
+  Returns:
+    The release candidates, empty when nothing is cached.
+  """
+  if not probed.isrc:
+    return []
+  raw = store.get_raw(probed.isrc, "spotify")
+  return candidates_from_raw(raw) if isinstance(raw, dict) else []
 
 
 def _resolved_for(store: Store, probed: ProbedFile) -> Resolved:
@@ -40,31 +56,35 @@ def _resolved_for(store: Store, probed: ProbedFile) -> Resolved:
   Returns:
     The resolved tags.
   """
-  candidates: list[ReleaseCandidate] = []
-  if probed.isrc:
-    raw = store.get_raw(probed.isrc, "spotify")
-    if isinstance(raw, dict):
-      candidates = candidates_from_raw(raw)
-  return arbitrate(probed, candidates)
+  return arbitrate(probed, _candidates_for(store, probed))
 
 
-def _map_row(probed: ProbedFile, resolved: Resolved) -> dict[str, str]:
+def _map_row(
+  probed: ProbedFile,
+  resolved: Resolved,
+  chosen: ReleaseCandidate | None,
+) -> dict[str, str]:
   """Build one `library.toml` row.
 
   Args:
     probed: the file's local facts.
     resolved: the arbitrated tags.
+    chosen: the release §7b picked, whose track id gives the spotify link.
 
   Returns:
-    The field values for the map.
+    The field values for the map. An empty service field is the worklist
+    entry §9b describes, not a gap to hide.
   """
+  spotify_url = ""
+  if chosen is not None and chosen.track_id:
+    spotify_url = f"https://open.spotify.com/track/{chosen.track_id}"
   return {
     "file": probed.path.name,
     "title": resolved.tags.title or "",
     "artist": resolved.tags.artist or "",
     "album": resolved.tags.album or "",
     "isrc": probed.isrc or "",
-    "spotify": "",
+    "spotify": spotify_url,
     "itunes": "",
     "beatport": "",
   }
@@ -207,7 +227,8 @@ def cmd_apply(args: argparse.Namespace) -> int:
     for probed in probe_tree(args.library):
       if args.limit and written >= args.limit:
         break
-      resolved = _resolved_for(store, probed)
+      candidates = _candidates_for(store, probed)
+      resolved = arbitrate(probed, candidates)
 
       # §9: emit a fully tagged copy, leave the source untouched.
       destination = args.out / probed.path.name
@@ -218,7 +239,7 @@ def cmd_apply(args: argparse.Namespace) -> int:
       entries.append(
         library_map.merge(
           probed.audio_md5,
-          _map_row(probed, resolved),
+          _map_row(probed, resolved, choose_release(candidates)),
           library_map.read(args.map).get(probed.audio_md5, {}),
           store.get_generated(probed.audio_md5),
         )
