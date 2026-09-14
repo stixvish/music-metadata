@@ -1862,24 +1862,46 @@ checked before either:
 1. BATCH PRECONDITION  (gate G8)
      tools/yt_cookies.py check
      asserts itag 141 or 774 is offered
-     FAIL → abort the whole batch with the refresh procedure
+     FAIL → DOWNLOAD NOTHING. abort before the first request.
      ↓
 2. PER-TRACK DOWNLOAD
      yt-dlp --cookies-from-browser chrome:{profile} -f 141/774
      exact itag, never `bestaudio` (F48)
-     FAIL → that track is skipped and queued, batch continues
+     FAIL → re-probe (below), do not simply skip
 ```
 
-**checked per batch, not per session.** cookie validity is transient (F20), so a
-run that starts valid can rotate mid-batch. the per-track `-f 141/774` selector
-is what catches that: yt-dlp errors instead of downgrading, so track 200 failing
-is visible rather than silently 151k.
+**a format failure is treated as systemic until proven otherwise.** cookie
+validity is transient (F20), so a batch that starts valid can rotate at track
+200. on the **first** `-f 141/774` failure the pipeline re-runs the cookie probe:
 
-**identity resolution needs no cookies.** musicfetch `/url` (F19) and the metadata
-probe run unauthenticated, so a cookie failure blocks *downloading*, never
-*identifying*. a batch can resolve identity for 50 tracks, discover the cookies
-are stale, and resume downloads later without re-resolving anything — the cache
-(§9a) already holds the identities.
+```
+probe now FAILS  →  cookies died mid-batch.
+                    ABORT THE ENTIRE BATCH IMMEDIATELY.
+                    every remaining track stays queued, untouched.
+probe still PASSES → this one track genuinely has no premium format.
+                    skip it, queue it for review, continue.
+```
+
+**the default on ambiguity is to stop.** continuing after the cookies die means
+hundreds of failed requests against youtube with a stale session — wasted time at
+best, and a pattern worth avoiding on an account the operator cares about (F20's
+ban-risk note).
+
+**aborting is cheap, which is why it is the default.** identity resolution needs
+no cookies — musicfetch `/url` (F19) and the metadata probe run unauthenticated —
+so a cookie failure blocks *downloading*, never *identifying*.
+
+```
+resolve 50 identities     → cached (§9a), survives the abort
+cookies stale             → batch aborts, 0 files written
+operator refreshes them   → tools/yt_cookies.py setup / check
+re-run                    → 0 API calls re-spent, downloads resume
+```
+
+**the queue is state, not a runtime list.** pending acquisitions live in the
+sidecar, so an abort loses nothing and a resume re-downloads nothing. this is what
+makes "stop immediately" the cheap option rather than the expensive one — there is
+no progress to protect by pressing on.
 
 
 ## 11. non-goals (v1)
