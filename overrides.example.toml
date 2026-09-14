@@ -1,0 +1,39 @@
+# overrides.toml — operator-supplied ground truth.
+#
+# this file is INPUT, not cache. `music-metadata cache --clear` never touches it.
+# anything here outranks every automated source, and is recorded in provenance
+# as `manual` so `verify` can show you what you asserted by hand.
+#
+# lives at ~/.config/musicpipeline/overrides.toml
+# the web ui (§14) writes to this same file, so hand-editing and the ui agree.
+
+# --- keyed by ISRC (preferred) --------------------------------------------
+
+["GBARL2501127"]
+# musicfetch returned no beatport link for this remix (F23). found by hand.
+beatport = "https://www.beatport.com/track/blessings/23984398"
+note     = "odd mob remix; musicfetch had no link"
+
+["INS181600966"]
+# this ISRC is wrong for the file — it belongs to a different song (F39 class C).
+# clearing it sends the track through tier-0 identity instead.
+isrc   = false
+note   = "wrong isrc: belongs to 'Sau Tarah Ke', not this track"
+
+["USUYG1791764"]
+# the extended mix inherited the radio edit's ISRC.
+spotify = "https://open.spotify.com/track/xxxxxxxxxxxxxxxxxxxxxx"
+note    = "extended mix; 248s not 174s"
+
+# --- keyed by audio md5, for files with no usable ISRC ---------------------
+
+["md5:c11219b3517cef108338855825244d30"]
+# file: NAV - My Business (ft. Future).aiff
+appleMusic = "https://music.apple.com/us/album/x/1234567890?i=1234567891"
+
+# --- direct field overrides, when no source has it right -------------------
+
+["QM6N22551003"]
+genre        = "Melodic House & Techno"
+album_artist = "Emotional Oranges"
+note         = "beatport genre is wrong for this one"
