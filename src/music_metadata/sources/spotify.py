@@ -186,6 +186,32 @@ def _names(entries: JsonValue) -> tuple[str, ...]:
   return tuple(out)
 
 
+def candidates_from_raw(raw: JsonValue) -> list[ReleaseCandidate]:
+  """Re-parse a stored payload into candidates, with no network call.
+
+  This is what §9a's raw-payload rule buys: a parsing fix is replayed offline
+  against what was already fetched, instead of forcing a re-fetch of 1,494
+  tracks at 20 req/min.
+
+  Args:
+    raw: a payload as `search_isrc` stored it — `{"query": ..., "pages": [...]}`
+      — or a single bare search page.
+
+  Returns:
+    The release candidates.
+  """
+  pages: list[JsonValue] = [raw]
+  if isinstance(raw, dict):
+    stored = raw.get("pages")
+    if isinstance(stored, list):
+      pages = stored
+
+  out: list[ReleaseCandidate] = []
+  for page in pages:
+    out += [c for c in (_candidate(i) for i in _items(page)) if c is not None]
+  return out
+
+
 def _items(raw: JsonValue) -> list[JsonValue]:
   """Pull `tracks.items` out of one search page.
 
