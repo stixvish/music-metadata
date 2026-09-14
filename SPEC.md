@@ -492,6 +492,47 @@ body parses as valid JSON with no `tracks` key, so a naive parser reports "no
 results" instead of an error. **every API helper must check for an `error` key
 before reading results.**
 
+**F28 — musicbrainz separates performers from composers; spotify cannot.**
+in bollywood the composer is credited as an "artist" on spotify, and **position
+is not a signal** — the composer appears first on some releases and last on
+others:
+
+```
+Lat Lag Gayee   spotify artists[]: ['Benny Dayal', 'Shalmali Kholgade', 'Pritam']   ← composer last
+Badtameez Dil   spotify artists[]: ['Pritam', 'Benny Dayal', 'Shefali Alvares', …]  ← composer first
+Jee Karda       spotify artists[]: ['Sachin-Jigar', 'Divya Kumar']                  ← composers first
+```
+
+musicbrainz resolves the roles in **two hops**. the recording gives performers
+and a link to the work; the work gives composer and lyricist:
+
+```
+/ws/2/isrc/INT101202571?inc=artist-credits+artist-rels+work-rels
+   artist-credit : Benny Dayal & Shalmali Kholgade      ← Pritam already excluded
+   vocal         : Benny Dayal
+   vocal         : Shalmali Kholgade
+   performance   : → work fe49ff82-…
+
+/ws/2/work/fe49ff82-…?inc=artist-rels
+   composer      : Pritam
+   lyricist      : Mayur Puri                            ← not in spotify's list at all
+```
+
+**two things fall out.** musicbrainz's `artist-credit` *already* excludes
+composers, so it is the correct source for `artist` with no filtering needed —
+the same field that solves the featured-artist split in §6. and the work hop
+recovers a **lyricist spotify never reported**.
+
+coverage is partial: `Jee Karda` returned a `performance` link but **no `vocal`
+relations**, so role typing cannot be relied on universally — `artist-credit`
+is the load-bearing field and `vocal` rels are corroboration.
+
+operational notes: musicbrainz asks for **1 request/second** with a real
+User-Agent, and returned `"The MusicBrainz web server is currently busy"` on one
+of three calls here — **retry with backoff is required, not optional.** at two
+hops per track a full pass is ~48 minutes, so work-level lookups are cached and
+run as a second pass rather than inline.
+
 **F8 — rate limits are gentler in practice than documented.**
 published Starter is 6 req/min ([musicfetch.io](https://musicfetch.io/) pricing,
 checked 2026-09-14). measured: **20 sequential requests at 1 req/s, all HTTP
@@ -626,7 +667,7 @@ feature in the deck display. **needs a decision** (§12).
 | field | 1st | 2nd | 3rd |
 |---|---|---|---|
 | title | **itunes `trackName`** (parsed, §7a) | spotify | filename parse |
-| artist | **musicbrainz artist-credit** (§6) | filename parse | itunes `artistName` |
+| artist | **musicbrainz artist-credit** — performers only (§6, F28) | filename parse | itunes `artistName` |
 | album | **itunes `collectionName`** | spotify | — |
 | album artist | **main artists only** (§6, §7a) | itunes `artistName` | artist |
 | track number | **itunes `trackNumber`** (F3) | — | — |
@@ -641,6 +682,8 @@ feature in the deck display. **needs a decision** (§12).
 | mix name (`TIT3`) | beatport `mix_name` (F24) | parsed from itunes title | filename bracket |
 | remixer (`TPE4`) | beatport `remixers` (F24) | parsed from mix name | — |
 | ISRC | the file's own tag | musicfetch `isrc` | — |
+| composer (`TCOM`) | musicbrainz work → composer (F28) | — | — |
+| lyricist (`TEXT`) | musicbrainz work → lyricist (F28) | — | — |
 
 ## 7a. naming and tag shape
 
@@ -691,6 +734,32 @@ verbatim.**
 
 `Original` is written to `TIT3` only when the source states it; it is never
 invented for a track that simply has no mix name.
+
+
+**performer vs composer (F28).** `artist` carries **performing artists only** —
+vocalists and instrumentalists. composers, lyricists and producers go to their
+own frames, never to `artist`:
+
+| role | frame | source |
+|---|---|---|
+| performers | `TPE1` (`artist`) | musicbrainz `artist-credit` |
+| composer | `TCOM` | musicbrainz work → `composer` |
+| lyricist | `TEXT` | musicbrainz work → `lyricist` |
+| album artist | `TPE2` | the chosen release (§7b) |
+
+**`album artist` is allowed to differ sharply from `artist`** — operator
+decision. on a film soundtrack it may be `Various Artists`, a composer, or a
+music director, and that is correct: it describes the *release*, not the
+recording. only `artist` is held to the performers-only rule.
+
+**separator style (OQ-7, decided).** comma between every artist, `&` before the
+last:
+
+```
+Benny Dayal, Shalmali Kholgade & Divya Kumar
+Arijit Singh                                  (single artist — no separator)
+Benny Dayal & Shalmali Kholgade               (two artists — & only)
+```
 
 **continuous mixes.** a `[Continuous Mix]` is a DJ mix compilation: the mix is
 the album artist's work, the track is not. per operator decision:
@@ -748,11 +817,10 @@ appears and the `" - {X} Remix"` suffix appears only on remix releases, where it
 is genuine and belongs in `TIT3`. title cleaning becomes a fallback path rather
 than the main one.
 
-**OQ-9 — soundtrack albums.** for `Badrinath Ki Dulhania` the chosen release is
-the film's 5-track soundtrack. that is the right *album*, but the **album
-artist** is then a film composer or "Various Artists" rather than Arijit Singh.
-56 bollywood tracks are affected. leave album artist as the release states, or
-force the track artist? **needs a decision.**
+**OQ-9 (decided) — soundtrack albums.** album artist is left **as the release
+states**, including `Various Artists` or a music director. it describes the
+release, not the recording. the performers-only rule binds `artist` alone (§7a,
+F28).
 
 
 ## 8. gates — a stage is not done until these pass
@@ -917,8 +985,8 @@ live APIs, marked and excluded from the default run.
 - ~~**bollywood `(From "…")` suffix.**~~ **resolved by §7b** — the suffix marks a
   compilation release. choosing the correct release removes it; no string
   stripping needed.
-- **OQ-7 artist separator style.** comma-separate all but the last, `&` before
-  the last? cosmetic but should be consistent (§7a).
+- ~~**OQ-7 artist separator style.**~~ **decided:** comma between every artist,
+  `&` before the last (§7a).
 - **OQ-5 official beatport credentials.** the operator will supply client id and
   secret via `.env` when obtained. `OAuthClientProvider` reads them;
   `CookieSessionProvider` runs until then (F15). not a blocker.
