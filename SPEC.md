@@ -765,6 +765,61 @@ tracks carry a western genre, and **23** indian-genre tracks carry a non-IN ISRC
 — diaspora releases such as `Raghav & Tesher — Desperado` (`SGB502383473`,
 singapore). the scope rule is therefore **either** signal, not both.
 
+**F39 — the library has 6 duplicate ISRCs in three distinct classes.** measured
+across all 1,494 files by ISRC and by audio-stream md5:
+
+**class A — true duplicates (3).** identical audio md5 *and* identical ISRC; the
+second copy carries a ` (2)` filename suffix:
+```
+Tiësto - The Business / (2)              85b48197…  same bytes
+John Summit & Feid - CHICA 305 / (2)     635e4af1…  same bytes
+NAV - My Business (ft. Future) / (2)     c11219b3…  same bytes
+```
+
+**class B — same ISRC, genuinely different recordings (2).**
+```
+Bebe Rexha - New Religion             174s   ← spotify says 174s  ✓
+Bebe Rexha - New Religion [Extended]  248s   ← wrong ISRC, inherited from the edit
+Emotional Oranges - Call It Off / (ft. JAEHYUN)
+```
+
+**class C — an ISRC on an entirely unrelated song (1).**
+```
+INS181600966  spotify: 'Sau Tarah Ke', 238s
+  Sau Tarah Ke.aiff          238s  ✓ correct
+  Jai Jai Shivshankar.aiff   230s  ✗ a completely different song
+```
+
+**F40 — duration identifies a wrong ISRC, and the tolerance is tight.**
+across 26 sampled tracks, local duration vs the ISRC's spotify duration:
+
+```
+26 of 26 agreed.  max legitimate delta: 2s.  most were exactly 0s.
+```
+
+against deltas of **8s** (class C) and **74s** (class B), the separation is
+unambiguous. **a ±5s tolerance is well clear of observed noise**, and it is the
+same discriminator already used for beatport edits (G3) and acquisition (G7) —
+one mechanism, three uses.
+
+this answers "how would we know our ISRC is wrong": **we compare the audio we
+have against the duration of the recording the ISRC claims to be.** no
+fingerprinting required for the common case.
+
+**F41 — music videos are distinguishable from audio releases by metadata shape.**
+
+```
+youtube music '- Topic' upload      official artist-channel video
+  uploader  EI8HT - Topic             uploader  Dua Lipa
+  track     Silk and Cologne…         track     <absent>
+  artist    EI8HT, Offset             artist    <absent>
+  album     METRO BOOMIN PRESENTS…    album     <absent>
+```
+
+both report `categories: ['Music']` and `media_type: video`, so neither of those
+fields helps. the reliable signal is that **youtube music auto-generated `- Topic`
+uploads carry `track`/`artist`/`album`, and music videos do not.**
+
 **F8 — rate limits are gentler in practice than documented.**
 published Starter is 6 req/min ([musicfetch.io](https://musicfetch.io/) pricing,
 checked 2026-09-14). measured: **20 sequential requests at 1 req/s, all HTTP
@@ -1244,6 +1299,12 @@ with no signal that anything went wrong.
     `isrc` are **discarded**.
   zero results is a normal outcome, not a failure. the fraction of tracks landing
   in each class is reported by `verify`.
+- **G10 ISRC trust.** every track's local duration is compared to the duration
+  of the recording its ISRC claims (F40). delta > ±5s means **the ISRC does not
+  describe this file**: it is stripped, the track goes to tier-0 identity, and it
+  is queued for review. no field resolved from an untrusted ISRC is ever written.
+- **G11 no duplicates in the output tree.** no two output files share an audio
+  md5, and no ISRC appears twice except where G10 has flagged one as wrong.
 - **G9 no cross-recording contamination.** when the duration class is "different
   edit", the written ISRC must equal the file's own. adopting beatport's ISRC for
   a longer recording is a correctness failure, not a metadata improvement, and
@@ -1339,6 +1400,57 @@ accepted deliberately, not by omission.
   degrades to apple; we do not build a challenge solver.
 - cue points, beatgrids, crates — owned by the DJ apps.
 - playlist and crate provenance.
+
+## 11a. duplicates
+
+**three classes, three policies (F39).** the distinction matters: only one class
+is safely automatic.
+
+| class | test | policy |
+|---|---|---|
+| **A — true duplicate** | same ISRC **and** same audio md5 | **auto-resolve.** keep one, delete the other. byte-identical audio cannot lose information. |
+| **B — same ISRC, different audio** | same ISRC, differing md5, duration delta > 5s | **never auto-delete.** these are different recordings; one ISRC is wrong. re-resolve both by duration (F40) and queue for review. |
+| **C — ISRC on an unrelated song** | duration delta > 5s vs the ISRC's own duration | **strip the ISRC**, route the file through tier-0 identity (§10), queue for review. |
+
+**deletion is always to a quarantine directory, never `rm`.** the operator
+reviews and empties it. combined with the §9 rule that the source tree is never
+mutated, class A resolution on the *source* library is a report; only the output
+tree is de-duplicated.
+
+**preventing future duplicates.** the sidecar holds a unique index on ISRC and on
+audio md5. `acquire` checks both **before download**:
+
+```
+ISRC already in library        → skip, report "already have this recording"
+audio md5 matches after fetch  → discard the download, keep the existing file
+```
+
+the ISRC check is the cheap one and runs first — tier 0 resolves identity before
+committing to a download anyway (§10), so a duplicate costs one API call rather
+than a file.
+
+**note the ` (2)` filenames are a symptom, not the test.** all three class-A
+duplicates happen to carry it, but the test is the audio hash — a re-download
+under a different name would not.
+
+## 11b. excluding music videos
+
+the operator wants the **release**, never the video (F41).
+
+```
+admit   uploader ends with ' - Topic'  AND  track/artist/album present
+reject  otherwise  →  retry via music.youtube.com, or refuse with a reason
+```
+
+`categories: ['Music']` and `media_type: video` appear on **both** and must not
+be used. the duration gate (G7) is the backstop: a music video's intro and outro
+push it clear of the resolved recording's duration, so a video that slips past
+the metadata test still fails admission.
+
+**prefer `music.youtube.com` URLs.** given a plain `youtube.com` link, tier 0
+resolves the ISRC via musicfetch `/url` (F19) and then re-searches youtube music
+for the audio release rather than downloading the page it was handed.
+
 
 ## 12. project structure, commands, testing
 
