@@ -442,6 +442,56 @@ and the original carries **no `TPE4`/`TIT3` at all** — correct. apple and spot
 instead use a `" - {X} Remix"` suffix on `name`, so their titles must be parsed
 into title + mix name before writing (§7a).
 
+**F26 — the `(From "…")` suffix is a *compilation* artefact, and spotify's ISRC
+search exposes every release a recording appears on.**
+`GET /v1/search?q=isrc:{ISRC}&type=track` returns one entry per release. for
+`INS181700238` (Arijit Singh — Roke Na Ruke Naina) it returns **ten**:
+
+```
+[single     ] 2017-02-14 trk 2/5   Badrinath Ki Dulhania      | Roke Na Ruke Naina
+[compilation] 2017-06-07 trk 5/20  Love Forever With Arijit…  | Roke Na Ruke Naina (From "Badrinath Ki Dulhania")
+[compilation] 2018-02-06 trk 2/20  Arijit Singh: Love Songs   | Roke Na Ruke Naina (From "Badrinath Ki Dulhania")
+…  nine compilations, every one suffixed
+```
+
+**the movie soundtrack release carries the clean title; only the compilations
+add the `(From "…")` context** — they need it because the album gives no other
+clue. so the suffix is not a bollywood convention to strip, it is a signal that
+the *wrong release* was chosen. picking the right release removes it for free.
+
+**F27 — release preference: `album` > `single` > `compilation`, earliest first.**
+"earliest non-compilation" was the obvious rule and it is **wrong**: for
+`USJI10000001` (\*NSYNC — Bye Bye Bye) the earliest non-compilation is a
+**1-track single**, which would set `track 1/1` and discard the album entirely.
+the album release is the better attribution:
+
+```
+[single     ] 2000-01-17 trk 1/1   Bye Bye Bye           ← earliest, but 1/1
+[album      ] 2000-03-21 trk 1/12  No Strings Attached   ← correct
+[compilation] 2005-10-25 …         Greatest Hits         ← plus 7 more
+```
+
+the type-ordered rule is correct on all four probes:
+
+| ISRC | chosen release | why |
+|---|---|---|
+| `USJI10000001` | `No Strings Attached` (album, 1/12) | album beats the 1/1 single |
+| `USUG12509635` | `ODYSSEY` (album, 7/19) | album beats same-day single |
+| `INS181700238` | `Badrinath Ki Dulhania` (single, 2/5) | no album exists; soundtrack wins, clean title |
+| `GBARL2501127` | `Blessings — The Remixes (Part 2)` (single, 4/6) | only release |
+
+this single policy fixes **album, album artist, track number, disc number and
+title cleanliness across the whole library** — it is not a bollywood special
+case. it also explains the earlier itunes edition ambiguity (standard / deluxe /
+instrumental): those are release-selection failures, not identity failures.
+
+**two traps recorded.** spotify's `tracks.total` reads **0** on `isrc:` searches
+while `items` is fully populated — count `items`, never trust `total`. and
+`limit=50` returns `400 Invalid limit` on this endpoint (10 works); the error
+body parses as valid JSON with no `tracks` key, so a naive parser reports "no
+results" instead of an error. **every API helper must check for an `error` key
+before reading results.**
+
 **F8 — rate limits are gentler in practice than documented.**
 published Starter is 6 req/min ([musicfetch.io](https://musicfetch.io/) pricing,
 checked 2026-09-14). measured: **20 sequential requests at 1 req/s, all HTTP
@@ -583,7 +633,7 @@ feature in the deck display. **needs a decision** (§12).
 | disc number | **itunes `discNumber`** (F3) | — | — |
 | release date | **itunes `releaseDate`** | beatport `publish_date` | — |
 | year | derived from release date | — | — |
-| **genre** | **beatport `sub_genre` if present, else `genre`** (F13) | itunes `primaryGenreName` | existing tag |
+| **genre** | **beatport `sub_genre` if present, else `genre`** — wherever a beatport listing exists, regardless of style (operator decision) | itunes `primaryGenreName` | existing tag |
 | artwork | apple master at configured size (F5) | existing embedded art | — |
 | label | beatport `release.label` | itunes | — |
 | bpm | **beatport `bpm`** (F14, 100% coverage) | — | — |
@@ -642,6 +692,18 @@ verbatim.**
 `Original` is written to `TIT3` only when the source states it; it is never
 invented for a track that simply has no mix name.
 
+**continuous mixes.** a `[Continuous Mix]` is a DJ mix compilation: the mix is
+the album artist's work, the track is not. per operator decision:
+
+- `TPE4` (remixer) — **the album artist**, i.e. the DJ who assembled the mix
+- `artist` — **unchanged**, the track's own artist (David Guetta stays David
+  Guetta)
+- `TIT3` — `Continuous Mix`
+
+this is the one case where `TPE4` is populated without the mix name naming a
+remixer, and it is deliberate: the mixer *is* the person who modified the
+recording, which is exactly what `TPE4` means.
+
 **artist vs album artist.** features live in the *title*, so:
 
 - `artist` — **main artists only**, plus the remixer when there is one
@@ -657,6 +719,40 @@ strings (`Calvin Harris & Clementine Douglas` vs `Calvin Harris, Clementine
 Douglas & Odd Mob`). serato and rekordbox both treat the field as one opaque
 string, so this is cosmetic — but it should be *consistently* cosmetic. proposed:
 comma-separate all but the last, `&` before the last. **needs confirmation.**
+
+
+## 7b. release selection
+
+**every album-level field depends on choosing the right release first.** a
+recording appears on many (F26): the original album, a single, and any number of
+compilations. album, album artist, track number, disc number and even the title
+string all change with that choice.
+
+```
+candidates = spotify /v1/search?q=isrc:{ISRC}&type=track
+rank by (album_type: album=0, single=1, compilation=2), then release_date asc
+pick the first
+```
+
+**compilations are chosen only when nothing else exists.** they carry inflated
+track counts (`trk 36/50`), meaningless track numbers, and the `(From "…")` and
+`- {X} Remix` title suffixes that §7a would otherwise have to strip.
+
+**tier 2 gains spotify.** itunes supplies `trackNumber`/`discNumber` (F4) but
+exposes only the one release its id points at; spotify's ISRC search is what
+makes the *set* of releases visible. once a release is chosen, its track and disc
+numbers are read from that release, not from an arbitrary apple id.
+
+**consequences for §7a.** with the right release chosen, `(From "…")` never
+appears and the `" - {X} Remix"` suffix appears only on remix releases, where it
+is genuine and belongs in `TIT3`. title cleaning becomes a fallback path rather
+than the main one.
+
+**OQ-9 — soundtrack albums.** for `Badrinath Ki Dulhania` the chosen release is
+the film's 5-track soundtrack. that is the right *album*, but the **album
+artist** is then a film composer or "Various Artists" rather than Arijit Singh.
+56 bollywood tracks are affected. leave album artist as the release states, or
+force the track artist? **needs a decision.**
 
 
 ## 8. gates — a stage is not done until these pass
@@ -773,6 +869,7 @@ src/music_metadata/
     musicfetch.py   # tier 1 — identity + service ids
     itunes.py       # tier 2 — track/disc number
     musicbrainz.py  # tier 2 — artist-credit roles (§6)
+    spotify.py      # tier 2 — release selection by ISRC (§7b)
     beatport.py     # tier 3 — genre/bpm/key
     bp_auth.py      # pluggable TokenProvider: cookie | oauth (F15)
     ratelimit.py    # token bucket, 20/min (F8)
@@ -817,6 +914,9 @@ live APIs, marked and excluded from the default run.
   a re-acquisition worklist; (c) have tier 0 prefer extended versions on new
   downloads. **(b) recommended** — it surfaces the problem without silently
   re-downloading a library. needs a decision.
+- ~~**bollywood `(From "…")` suffix.**~~ **resolved by §7b** — the suffix marks a
+  compilation release. choosing the correct release removes it; no string
+  stripping needed.
 - **OQ-7 artist separator style.** comma-separate all but the last, `&` before
   the last? cosmetic but should be consistent (§7a).
 - **OQ-5 official beatport credentials.** the operator will supply client id and
