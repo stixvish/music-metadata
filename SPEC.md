@@ -1486,7 +1486,7 @@ outside this table is written.**
 | **composer** | `TCOM` | musicbrainz work → composer | indian scope |
 | **lyricist** | `TEXT` | musicbrainz work → lyricist | indian scope |
 | **BPM** | `TBPM` | beatport only (§7e) | **partial** |
-| **key** | `TKEY` | beatport only (§7e) | **partial** |
+| **key** | `TKEY` | beatport only, **written in camelot** (§7f) | **partial** |
 | artwork | `APIC` | verified chain §7c at 3000² | ~100% |
 
 **`TOPE` (original artist) is new and only meaningful on remixes.** on
@@ -1526,10 +1526,53 @@ a real dependency decision, not a small one — `essentia` is ~120 MB.
 
 **and it may not be worth it.** rekordbox computes its own BPM and key during
 analysis and prefers its own values over tags, so a computed `TBPM` mainly buys
-sorting in serato and in this project's own ui. **recommendation: write BPM and
-key only where beatport supplies them, leave them empty otherwise, and revisit
-local analysis once the library is otherwise correct.** an empty field is honest;
-a guessed one gets trusted. recorded as OQ-11.
+sorting in serato and in this project's own ui. **decided: write BPM and key only where a source supplies them, leave them empty
+otherwise.** local analysis is **not implemented** — rekordbox recomputes both
+during its own analysis and prefers its own values over tags, so computing them
+here buys almost nothing for ~120 MB of dependencies. an empty field is honest;
+a guessed one gets trusted.
+
+where a source *does* supply them they are kept — beatport today, and any future
+source that carries them. key is normalised to camelot on the way in (§7f).
+
+
+## 7f. key notation — camelot
+
+**`TKEY` is written in camelot, not musical notation** (operator decision).
+beatport reports `"Eb Minor"`, `"Db Major"`, `"F# Minor"`; rekordbox and serato
+both display camelot, and harmonic mixing is done in it. storing `2A` rather
+than `Eb Minor` means the tag is usable without mental conversion mid-set.
+
+the wheel is circle-of-fifths ordered — `B` is major, `A` is its relative minor,
+so `nA` and `nB` share the same seven notes and mix cleanly.
+
+| # | A (minor) | B (major) |
+|---|---|---|
+| 1 | A♭ / G♯ | B |
+| 2 | E♭ / D♯ | F♯ / G♭ |
+| 3 | B♭ / A♯ | D♭ / C♯ |
+| 4 | F | A♭ / G♯ |
+| 5 | C | E♭ / D♯ |
+| 6 | G | B♭ / A♯ |
+| 7 | D | F |
+| 8 | A | C |
+| 9 | E | G |
+| 10 | B | D |
+| 11 | F♯ / G♭ | A |
+| 12 | D♭ / C♯ | E |
+
+anchors verified against published charts: **1A = A♭ minor, 1B = B major,
+8A = A minor, 8B = C major**
+([dj.studio](https://dj.studio/blog/camelot-wheel), checked 2026-09-14), and the
+table is internally consistent by circle of fifths.
+
+**`tools/camelot.py` is the tested reference implementation** — all 24 codes
+unique and covered, every key beatport returned during this research verified,
+plus enharmonic spellings (`D#`→`Eb`, `C#`→`Db`, `Gb`→`F#`) and case variants.
+
+**an unparseable key returns `None` and `TKEY` is left empty.** a wrong key is
+worse than a missing one: it survives into a set and gets trusted. this mirrors
+the §7e position on BPM.
 
 
 ## 8. gates — a stage is not done until these pass
@@ -1846,6 +1889,7 @@ src/music_metadata/
   credit.py         # §6 main vs featured split
   arbitrate.py      # §7 precedence
   artwork.py        # verified chain, 3000² (§7c)
+  camelot.py        # key -> camelot, tested table (§7f)
   tag.py            # ID3-on-AIFF writer, preserves foreign frames
   library_map.py    # library.toml: generate, merge, read back (§9b)
   store.py          # sidecar cache (sqlite, shared with the web ui)
@@ -1911,9 +1955,9 @@ live APIs, marked and excluded from the default run.
   itunes (F47). still **not** a BPM or key source — it has neither (§7e). costs
   two calls per track (search → release), so it runs only when beatport has no
   listing.
-- **OQ-11 local BPM/key analysis.** ~120 MB of dependencies for fields rekordbox
-  recomputes anyway. **recommendation: defer** — write beatport's values, leave
-  the rest empty, revisit when the library is otherwise correct.
+- ~~**OQ-11 local BPM/key analysis.**~~ **deferred, deliberately.** rekordbox
+  recomputes both anyway. values are kept where a source supplies them (beatport
+  today) and left empty otherwise; key is stored in **camelot** (§7f).
 - **OQ-5 official beatport credentials.** the operator will supply client id and
   secret via `.env` when obtained. `OAuthClientProvider` reads them;
   `CookieSessionProvider` runs until then (F15). not a blocker.
