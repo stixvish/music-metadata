@@ -578,6 +578,27 @@ spec recorded it as a coverage gap, which was wrong — it was a transient
 must never be conflated**: the parser distinguishes `error: Not Found` from
 `currently busy`, and only the former counts as absent.
 
+**F31 — a musicbrainz miss does not mean a bad ISRC.** both ISRCs musicbrainz
+returned `Not Found` for resolve cleanly everywhere else:
+
+```
+INS181801821  musicfetch: Kamariya (From "Stree")   spotify: 10 releases
+SGB502383473  musicfetch: Desperado / RAGHAV, Tesher  spotify: 1 release
+```
+
+so the library's second-hand ISRCs are sound (consistent with F17) and the gap
+is **musicbrainz's catalogue**, concentrated in regional repertoire — indian and
+singaporean registrants here. the §6 fallback chain covers it: spotify resolved
+both, and `Kamariya`'s spotify title carries the `(From "Stree")` suffix that
+§7b's release selection then removes.
+
+this also means **`artist` role separation (F28) is unavailable for these
+tracks** — no musicbrainz recording means no `vocal` relations and no work hop,
+so composer and lyricist cannot be recovered and `artist` falls back to
+spotify's flattened list. for bollywood specifically that is the worst case,
+since it is exactly where composers pollute `artists[]`. the affected tracks are
+**flagged for review rather than silently accepted** (G6).
+
 **F8 — rate limits are gentler in practice than documented.**
 published Starter is 6 req/min ([musicfetch.io](https://musicfetch.io/) pricing,
 checked 2026-09-14). measured: **20 sequential requests at 1 req/s, all HTTP
@@ -846,9 +867,39 @@ string all change with that choice.
 
 ```
 candidates = spotify /v1/search?q=isrc:{ISRC}&type=track
-rank by (album_type: album=0, single=1, compilation=2), then release_date asc
+rank by (album_type: album=0, single=1, compilation=2),
+        then total_tracks DESC,
+        then release_date ASC
 pick the first
 ```
+
+**`total_tracks` descending is load-bearing, not cosmetic.** an earlier revision
+ranked by release date alone and picked the wrong release for `Kamariya`:
+
+```
+[single] 2018-08-09  1/1  Kamariya (From "Stree")  | Kamariya (From "Stree")   ← earliest, WRONG
+[single] 2018-08-22  2/4  Stree                    | Kamariya                  ← correct
+```
+
+a **1-track single is a promotional release**; the parent album or soundtrack is
+the recording's real home, and it is frequently published *later*. ranking on
+track count finds the parent; ranking on date finds the promo.
+
+verified against every case probed for this spec:
+
+| ISRC | chosen release | title |
+|---|---|---|
+| `INS181801821` | `Stree` (single, 2/4) | `Kamariya` — clean |
+| `INS181700238` | `Badrinath Ki Dulhania` (single, 2/5) | `Roke Na Ruke Naina` — clean |
+| `USJI10000001` | `No Strings Attached` (album, 1/12) | `Bye Bye Bye` |
+| `USUG12509635` | `ODYSSEY` (album, 7/19) | `Don't Want Your Love` |
+| `GBARL1201392` | `18 Months` (album, 10/15) | `Sweet Nothing (feat. Florence Welch)` |
+| `SGB502383473` | `Desperado` (single, 1/1) | `Desperado` — only release |
+| `GBARL2501127` | `Blessings — The Remixes (Part 2)` (single, 4/6) | `Blessings - Odd Mob Remix` |
+
+the last row still carries a `" - {X} Remix"` suffix, which is **correct** — it
+is a genuine remix release, and §7a moves that suffix into `TIT3` rather than
+stripping it.
 
 **compilations are chosen only when nothing else exists.** they carry inflated
 track counts (`trk 36/50`), meaningless track numbers, and the `(From "…")` and
