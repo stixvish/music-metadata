@@ -955,6 +955,29 @@ one worth reading. filter `labels[]` on `entity_type_name == "Label"`.
 matters for a DJ library. discogs slots **below beatport, above itunes** in the
 genre chain (§7).
 
+**F48 — `bestaudio` degrades silently; an exact itag fails loudly.** measured on
+the same track, same moment:
+
+```
+-f 999        (nonexistent)       ERROR: Requested format is not available   ← loud
+-f bestaudio  with cookies        774  293k opus     ← premium, but OPUS not AAC
+-f bestaudio  without cookies     251  151k opus     ← SILENT degradation
+```
+
+two separate problems with `bestaudio`:
+
+1. **it hides cookie failure.** without valid premium cookies it quietly returns
+   151k opus and reports success. this is exactly how the library could fill with
+   the wrong quality unnoticed (F20).
+2. **it picks opus over AAC** — 293k beats 258k on bitrate alone, so `bestaudio`
+   selects itag 774 even when 141 is available. the existing 1,494 files are all
+   **AAC 257k** (F20), so `bestaudio` would silently change the library's source
+   codec.
+
+**the format selector is `141/774`, never `bestaudio`.** prefer AAC 256k for
+consistency with the existing library; fall back to premium opus; **fail loudly**
+if neither is offered rather than accepting 151k.
+
 **F8 — rate limits are gentler in practice than documented.**
 published Starter is 6 req/min ([musicfetch.io](https://musicfetch.io/) pricing,
 checked 2026-09-14). measured: **20 sequential requests at 1 req/s, all HTTP
@@ -1801,6 +1824,62 @@ recoverable that the AAC encoder discarded. the existing 1,494 files are already
 converted and are not in scope to revisit. ~~the open question is **new** acquisitions.~~ **decided: convert to AIFF**, for
 consistency with the existing 1,494 files and DJ-app behaviour. the 5.4× cost is
 accepted deliberately, not by omission.
+
+
+## 10a. premium cookies — sourcing and placement
+
+the operator holds youtube premium, and **premium audio is the difference between
+itag 141 (AAC 256k) and itag 251 (opus 151k)** — the entire quality basis of the
+library (F20).
+
+**where cookies come from.** yt-dlp reads chrome's cookie store directly; there
+is no export step in the normal path:
+
+```
+--cookies-from-browser chrome:{profile}
+```
+
+two profiles, two properties:
+
+| profile | works | durability |
+|---|---|---|
+| `chrome:Default` | yes, verified today — itag 141 at 258k | **rotates.** youtube re-issues cookies as the operator browses, and a rotated set is rejected (F20) |
+| `chrome:ytdlp` (dedicated) | same | **does not rotate** — logged in once, never browsed again |
+
+the wiki's incognito procedure exists because incognito cookies are memory-only
+and need a browser extension to export. **a dedicated profile has the same
+never-rotated property with a real cookie database**, so it needs no export and
+no extension. `tools/yt_cookies.py setup` walks through creating it.
+
+**default is `chrome:Default` with a fallback to the dedicated profile**, because
+Default works today and needs no setup. when `check` starts failing, the
+dedicated profile is the fix, not a re-export.
+
+**where it sits in the pipeline.** cookies are used at exactly two points, and
+checked before either:
+
+```
+1. BATCH PRECONDITION  (gate G8)
+     tools/yt_cookies.py check
+     asserts itag 141 or 774 is offered
+     FAIL → abort the whole batch with the refresh procedure
+     ↓
+2. PER-TRACK DOWNLOAD
+     yt-dlp --cookies-from-browser chrome:{profile} -f 141/774
+     exact itag, never `bestaudio` (F48)
+     FAIL → that track is skipped and queued, batch continues
+```
+
+**checked per batch, not per session.** cookie validity is transient (F20), so a
+run that starts valid can rotate mid-batch. the per-track `-f 141/774` selector
+is what catches that: yt-dlp errors instead of downgrading, so track 200 failing
+is visible rather than silently 151k.
+
+**identity resolution needs no cookies.** musicfetch `/url` (F19) and the metadata
+probe run unauthenticated, so a cookie failure blocks *downloading*, never
+*identifying*. a batch can resolve identity for 50 tracks, discover the cookies
+are stale, and resume downloads later without re-resolving anything — the cache
+(§9a) already holds the identities.
 
 
 ## 11. non-goals (v1)
