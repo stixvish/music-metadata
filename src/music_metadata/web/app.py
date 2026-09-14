@@ -9,6 +9,7 @@ operator's own library on the operator's own machine.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
@@ -17,6 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from music_metadata.store import Store
+from music_metadata.web import jobs
 
 _HERE = Path(__file__).parent
 _TEMPLATES = Jinja2Templates(directory=str(_HERE / "templates"))
@@ -64,6 +66,19 @@ def create_app(store: Store) -> FastAPI:
       context={"screen": screen, "note": note},
     )
 
+  @app.post("/resolve", response_class=HTMLResponse)
+  def start_resolve(request: Request) -> HTMLResponse:
+    """Kick off a resolve in the background and return its progress fragment.
+
+    §14: a 72-minute resolve cannot block an http request, so this returns
+    immediately with the fragment htmx will poll.
+    """
+    job_id = jobs.start(store, "resolve", _resolve_body(store))
+    row = store.get_job(job_id)
+    return _TEMPLATES.TemplateResponse(
+      request=request, name="job.html", context={"job": row, "finished": False}
+    )
+
   @app.get("/jobs/{job_id}", response_class=HTMLResponse)
   def job(request: Request, job_id: int) -> HTMLResponse:
     row = store.get_job(job_id)
@@ -79,6 +94,40 @@ def create_app(store: Store) -> FastAPI:
     )
 
   return app
+
+
+def _resolve_body(store: Store) -> Callable[[jobs.Progress], None]:
+  """Build the resolve job's body.
+
+  Kept out of the route so the route stays a thin adapter and the work is
+  testable without an HTTP client.
+
+  Args:
+    store: the sidecar.
+
+  Returns:
+    A callable the job runner drives.
+  """
+
+  def work(progress: jobs.Progress) -> None:
+    from music_metadata.config import load_env, require
+    from music_metadata.sources.spotify import Spotify
+
+    load_env()
+    rows = store.query(
+      "SELECT isrc_from_tag FROM files WHERE isrc_from_tag IS NOT NULL ORDER BY path"
+    )
+    spotify = Spotify(require("SPOTIFY_CLIENT_ID"), require("SPOTIFY_CLIENT_SECRET"))
+    try:
+      for index, row in enumerate(rows, start=1):
+        isrc = row["isrc_from_tag"]
+        if store.get_raw(isrc, "spotify") is None:
+          store.put_raw(isrc, "spotify", spotify.search_isrc(isrc).raw)
+        progress.update(index, len(rows))
+    finally:
+      spotify.close()
+
+  return work
 
 
 def serve(sidecar: Path, host: str = "127.0.0.1", port: int = 8765) -> None:

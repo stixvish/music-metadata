@@ -77,8 +77,10 @@ class Store:
     try:
       conn.executescript(_SCHEMA.read_text())
       yield cls(conn)
-      conn.commit()
     finally:
+      # no trailing commit: every write below commits as it goes, so a commit
+      # here has no transaction to close and raises when a background job
+      # (web/jobs.py) is still writing as the context exits.
       conn.close()
 
   # --- raw access ------------------------------------------------------------
@@ -312,6 +314,38 @@ class Store:
            duration_s  = excluded.duration_s""",
       (isrc, chromaprint, duration_s),
     )
+
+  # --- library.toml provenance (§9b) -----------------------------------------
+
+  def put_generated(self, audio_md5: str, values: dict[str, str]) -> None:
+    """Record what the resolver just wrote into `library.toml` for one track.
+
+    Args:
+      audio_md5: the track's decoded-audio md5, which keys the map.
+      values: the generated field values.
+    """
+    with self._lock:
+      self.conn.executemany(
+        """INSERT INTO map_generated (audio_md5, field, value)
+           VALUES (?, ?, ?)
+           ON CONFLICT(audio_md5, field) DO UPDATE SET value = excluded.value""",
+        [(audio_md5, field, value) for field, value in values.items()],
+      )
+      self.conn.commit()
+
+  def get_generated(self, audio_md5: str) -> dict[str, str]:
+    """Return what the resolver last generated for one track.
+
+    Args:
+      audio_md5: the track's decoded-audio md5.
+
+    Returns:
+      Field to value. Empty when the track has never been generated.
+    """
+    rows = self.query(
+      "SELECT field, value FROM map_generated WHERE audio_md5 = ?", (audio_md5,)
+    )
+    return {r["field"]: r["value"] for r in rows}
 
   # --- jobs ------------------------------------------------------------------
 

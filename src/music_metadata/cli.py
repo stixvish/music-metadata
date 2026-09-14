@@ -1,0 +1,368 @@
+"""the command line (SPEC.md §12).
+
+the CLI and the web ui are two front doors to one sqlite store (§9a, §14);
+neither is authoritative. resolution and tagging are **separate commands**
+because the API is slow and rate-limited while tagging is fast and local —
+caching resolution means the tag writer can be re-run freely.
+
+nothing here writes to stdout directly: `output.emit` is the single sink, so
+the ui can capture exactly what the CLI says.
+"""
+
+from __future__ import annotations
+
+import argparse
+import shutil
+import sys
+from dataclasses import fields
+from pathlib import Path
+
+from music_metadata import library_map
+from music_metadata.arbitrate import Resolved, arbitrate
+from music_metadata.config import DEFAULT_SIDECAR, load_env, require
+from music_metadata.output import Level, emit
+from music_metadata.probe import ProbedFile, probe_tree
+from music_metadata.release import ReleaseCandidate, choose_release
+from music_metadata.sources.spotify import Spotify, candidates_from_raw
+from music_metadata.store import Store
+from music_metadata.tag import Tags, read_tags, write_tags
+
+DEFAULT_LIBRARY = Path.home() / "Music/library"
+
+
+def _candidates_for(store: Store, probed: ProbedFile) -> list[ReleaseCandidate]:
+  """Re-parse the cached spotify payload for one track. No network.
+
+  Args:
+    store: the sidecar.
+    probed: the file's local facts.
+
+  Returns:
+    The release candidates, empty when nothing is cached.
+  """
+  if not probed.isrc:
+    return []
+  raw = store.get_raw(probed.isrc, "spotify")
+  return candidates_from_raw(raw) if isinstance(raw, dict) else []
+
+
+def _resolved_for(store: Store, probed: ProbedFile) -> Resolved:
+  """Arbitrate one track from whatever is already cached.
+
+  Args:
+    store: the sidecar.
+    probed: the file's local facts.
+
+  Returns:
+    The resolved tags.
+  """
+  return arbitrate(probed, _candidates_for(store, probed))
+
+
+def _map_row(
+  probed: ProbedFile,
+  resolved: Resolved,
+  chosen: ReleaseCandidate | None,
+) -> dict[str, str]:
+  """Build one `library.toml` row.
+
+  Args:
+    probed: the file's local facts.
+    resolved: the arbitrated tags.
+    chosen: the release §7b picked, whose track id gives the spotify link.
+
+  Returns:
+    The field values for the map. An empty service field is the worklist
+    entry §9b describes, not a gap to hide.
+  """
+  spotify_url = ""
+  if chosen is not None and chosen.track_id:
+    spotify_url = f"https://open.spotify.com/track/{chosen.track_id}"
+  return {
+    "file": probed.path.name,
+    "title": resolved.tags.title or "",
+    "artist": resolved.tags.artist or "",
+    "album": resolved.tags.album or "",
+    "isrc": probed.isrc or "",
+    "spotify": spotify_url,
+    "itunes": "",
+    "beatport": "",
+  }
+
+
+def cmd_probe(args: argparse.Namespace) -> int:
+  """Survey the library's local tag facts. No network.
+
+  Args:
+    args: parsed arguments.
+
+  Returns:
+    Process exit code.
+  """
+  with Store.open(args.sidecar) as store:
+    total = with_isrc = 0
+    for probed in probe_tree(args.library):
+      store.put_file(
+        path=str(probed.path),
+        audio_md5=probed.audio_md5,
+        duration_s=probed.duration_s,
+        isrc=probed.isrc,
+        mtime=probed.path.stat().st_mtime,
+      )
+      total += 1
+      with_isrc += bool(probed.isrc)
+      if total % 100 == 0:
+        emit(f"probed {total}")
+
+    emit(f"probed {total} files")
+    emit(
+      f"with ISRC {with_isrc} ({with_isrc / total * 100:.1f}%)" if total else "empty"
+    )
+    emit(f"without ISRC {total - with_isrc}")
+  return 0
+
+
+def cmd_resolve(args: argparse.Namespace) -> int:
+  """Resolve identities through the source tiers into the sidecar.
+
+  Args:
+    args: parsed arguments.
+
+  Returns:
+    Process exit code.
+  """
+  load_env()
+  with Store.open(args.sidecar) as store:
+    rows = store.query(
+      "SELECT * FROM files WHERE isrc_from_tag IS NOT NULL ORDER BY path"
+    )
+    if args.limit:
+      rows = rows[: args.limit]
+    if not rows:
+      emit("nothing to resolve — run `probe` first", level=Level.WARN)
+      return 1
+
+    spotify = Spotify(require("SPOTIFY_CLIENT_ID"), require("SPOTIFY_CLIENT_SECRET"))
+    try:
+      fetched = cached = 0
+      for index, row in enumerate(rows, start=1):
+        isrc = row["isrc_from_tag"]
+        if store.get_raw(isrc, "spotify") is not None and not args.refetch:
+          cached += 1
+          continue
+        result = spotify.search_isrc(isrc)
+        store.put_raw(isrc, "spotify", result.raw)
+        fetched += 1
+        emit(f"[{index}/{len(rows)}] {isrc} — {len(result.candidates)} releases")
+    finally:
+      spotify.close()
+
+    emit(f"resolved {fetched} fetched, {cached} already cached")
+  return 0
+
+
+def _changes(current: Tags, proposed: Tags) -> list[tuple[str, str, str]]:
+  """List the fields that would change.
+
+  Args:
+    current: what the file carries now.
+    proposed: what the resolver would write.
+
+  Returns:
+    Field, old value, new value — for fields that actually differ.
+  """
+  out = []
+  for spec in fields(Tags):
+    if spec.name in {"artwork", "artwork_mime"}:
+      continue
+    old = getattr(current, spec.name)
+    new = getattr(proposed, spec.name)
+    if new is not None and old != new:
+      out.append((spec.name, str(old or ""), str(new)))
+  return out
+
+
+def cmd_diff(args: argparse.Namespace) -> int:
+  """Show the proposed change set, old to new. Writes nothing.
+
+  Args:
+    args: parsed arguments.
+
+  Returns:
+    Process exit code.
+  """
+  with Store.open(args.sidecar) as store:
+    shown = 0
+    for probed in probe_tree(args.library):
+      if args.limit and shown >= args.limit:
+        break
+      resolved = _resolved_for(store, probed)
+      changes = _changes(read_tags(probed.path), resolved.tags)
+      if not changes:
+        continue
+      shown += 1
+      emit(probed.path.name)
+      for field_name, old, new in changes:
+        source = resolved.provenance.get(field_name, "?")
+        emit(f"  {field_name:<16} {old!r} -> {new!r}  [{source}]")
+      if resolved.flags:
+        emit(f"  flags: {', '.join(resolved.flags)}", level=Level.WARN)
+    emit(f"{shown} tracks would change")
+  return 0
+
+
+def cmd_apply(args: argparse.Namespace) -> int:
+  """Write tagged copies to the output tree. The source is never touched.
+
+  Args:
+    args: parsed arguments.
+
+  Returns:
+    Process exit code.
+  """
+  args.out.mkdir(parents=True, exist_ok=True)
+  with Store.open(args.sidecar) as store:
+    written = 0
+    entries = []
+    for probed in probe_tree(args.library):
+      if args.limit and written >= args.limit:
+        break
+      candidates = _candidates_for(store, probed)
+      resolved = arbitrate(probed, candidates)
+
+      # §9: emit a fully tagged copy, leave the source untouched.
+      destination = args.out / probed.path.name
+      shutil.copy2(probed.path, destination)
+      write_tags(destination, resolved.tags)
+      written += 1
+
+      entries.append(
+        library_map.merge(
+          probed.audio_md5,
+          _map_row(probed, resolved, choose_release(candidates)),
+          library_map.read(args.map).get(probed.audio_md5, {}),
+          store.get_generated(probed.audio_md5),
+        )
+      )
+      emit(f"wrote {destination.name}")
+
+    library_map.write(args.map, entries, store)
+    emit(f"wrote {written} tagged copies to {args.out}")
+    emit(f"wrote {args.map}")
+  return 0
+
+
+def cmd_map(args: argparse.Namespace) -> int:
+  """Render the map for scanning (§9c). Read-only.
+
+  Args:
+    args: parsed arguments.
+
+  Returns:
+    Process exit code.
+  """
+  rows = library_map.read(args.map)
+  if not rows:
+    emit(f"no map at {args.map} — run `apply` first", level=Level.WARN)
+    return 1
+
+  shown = 0
+  for md5, values in rows.items():
+    if args.missing and values.get(args.missing):
+      continue
+    if args.no_isrc and values.get("isrc"):
+      continue
+    shown += 1
+    emit(
+      "\t".join(
+        [
+          md5,
+          values.get("file", ""),
+          values.get("isrc", ""),
+          values.get("spotify", ""),
+          values.get("itunes", ""),
+          values.get("beatport", ""),
+        ]
+      )
+    )
+  emit(f"{shown} of {len(rows)} rows")
+  return 0
+
+
+def cmd_serve(args: argparse.Namespace) -> int:
+  """Run the web ui (§14).
+
+  Args:
+    args: parsed arguments.
+
+  Returns:
+    Process exit code.
+  """
+  from music_metadata.web.app import serve
+
+  emit(f"serving on http://{args.host}:{args.port}")
+  serve(args.sidecar, host=args.host, port=args.port)
+  return 0
+
+
+def build_parser() -> argparse.ArgumentParser:
+  """Build the argument parser.
+
+  Returns:
+    The configured parser.
+  """
+  parser = argparse.ArgumentParser(prog="music-metadata", description=__doc__)
+  parser.add_argument("--sidecar", type=Path, default=DEFAULT_SIDECAR)
+  sub = parser.add_subparsers(dest="command", required=True)
+
+  probe = sub.add_parser("probe", help="local tag survey, no network")
+  probe.add_argument("--library", type=Path, default=DEFAULT_LIBRARY)
+  probe.set_defaults(func=cmd_probe)
+
+  resolve = sub.add_parser("resolve", help="resolve identities into the sidecar")
+  resolve.add_argument("--limit", type=int, default=0)
+  resolve.add_argument("--refetch", action="store_true", help="ignore the cache")
+  resolve.set_defaults(func=cmd_resolve)
+
+  diff = sub.add_parser("diff", help="proposed changes, old to new")
+  diff.add_argument("--library", type=Path, default=DEFAULT_LIBRARY)
+  diff.add_argument("--limit", type=int, default=0)
+  diff.set_defaults(func=cmd_diff)
+
+  apply_ = sub.add_parser("apply", help="write tagged copies")
+  apply_.add_argument("--library", type=Path, default=DEFAULT_LIBRARY)
+  apply_.add_argument("--out", type=Path, required=True)
+  apply_.add_argument("--map", type=Path, default=Path("library.toml"))
+  apply_.add_argument("--limit", type=int, default=0)
+  apply_.set_defaults(func=cmd_apply)
+
+  map_ = sub.add_parser("map", help="render the map for scanning")
+  map_.add_argument("--map", type=Path, default=Path("library.toml"))
+  map_.add_argument("--missing", help="only rows where this field is empty")
+  map_.add_argument("--no-isrc", action="store_true", help="only rows with no ISRC")
+  map_.set_defaults(func=cmd_map)
+
+  serve_ = sub.add_parser("serve", help="run the web ui")
+  serve_.add_argument("--host", default="127.0.0.1")
+  serve_.add_argument("--port", type=int, default=8765)
+  serve_.set_defaults(func=cmd_serve)
+
+  return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+  """Entry point.
+
+  Args:
+    argv: arguments, defaulting to `sys.argv[1:]`.
+
+  Returns:
+    Process exit code.
+  """
+  args = build_parser().parse_args(argv)
+  result: int = args.func(args)
+  return result
+
+
+if __name__ == "__main__":
+  sys.exit(main())

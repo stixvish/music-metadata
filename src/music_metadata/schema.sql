@@ -83,3 +83,17 @@ CREATE TABLE IF NOT EXISTS jobs (
   error      TEXT
 );
 CREATE INDEX IF NOT EXISTS jobs_state ON jobs (state);
+
+-- what the resolver last wrote into library.toml, per (md5, field).
+--
+-- §9b's merge rule needs this and nothing else can supply it: on the next run,
+-- a value in the file that still equals what we generated is ours to refresh,
+-- and a value that differs was edited by the operator and is preserved. without
+-- a record of what we generated, those two cases are indistinguishable and the
+-- resolver would either clobber every edit or never refresh anything.
+CREATE TABLE IF NOT EXISTS map_generated (
+  audio_md5 TEXT NOT NULL,
+  field     TEXT NOT NULL,
+  value     TEXT,
+  PRIMARY KEY (audio_md5, field)
+);
