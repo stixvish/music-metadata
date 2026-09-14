@@ -88,10 +88,12 @@ python_version = "3.12"
 strict         = true
 files          = ["src"]
 
-# these ship no type stubs
+# mutagen ships py.typed, so its types are real — but its ID3 frame
+# constructors carry no annotations, and strict mode counts every one as an
+# untyped call. the rule is switched off only in the module that touches them.
 [[tool.mypy.overrides]]
-module                 = ["mutagen.*"]
-ignore_missing_imports = true
+module                 = ["music_metadata.tag"]
+disallow_untyped_calls = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
