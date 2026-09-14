@@ -214,3 +214,12 @@ def test_earliest_ignores_unparseable_dates():
   junk = cand(release_date="")
 
   assert earliest_release_date([junk, good]) == "2001-05-05"
+
+
+def test_a_non_numeric_date_sorts_last_rather_than_crashing():
+  """spotify has sent malformed dates; one must not lose the other releases."""
+  junk = cand(release_date="not-a-date")
+  good = cand(release_date="2010-01-01")
+
+  assert choose_release([junk, good]) is good
+  assert earliest_release_date([junk, good]) == "2010-01-01"

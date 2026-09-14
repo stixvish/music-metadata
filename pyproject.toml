@@ -106,5 +106,9 @@ markers = [
 [tool.coverage.report]
 # the pure modules carry the decisions the spec argued hardest about, so they
 # are held to a hard bar. each is added here as it is built (tasks/todo.md).
-include    = ["src/music_metadata/output.py"]
+include = [
+  "src/music_metadata/output.py",
+  "src/music_metadata/release.py",
+  "src/music_metadata/naming.py",
+]
 fail_under = 90
