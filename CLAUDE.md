@@ -1,7 +1,7 @@
 # CLAUDE.md
 
-working conventions for this repo. **this file is about *how we work*.
-`SPEC.md` is about *what we are building*.** keep them separate — decisions
+working conventions for this repo. **this file is about _how we work_.
+`SPEC.md` is about _what we are building_.** keep them separate — decisions
 about the product go in the spec, decisions about process go here.
 
 ## verify before you claim
@@ -46,7 +46,7 @@ the rules:
 - **code follows its language's convention.** python is `snake_case` for
   functions and variables, `PascalCase` for classes — google style, 2-space
   indent. never impose the prose style on identifiers.
-- comments explain *why*, never *what*.
+- comments explain _why_, never _what_.
 
 ## commits, branches, prs
 
@@ -73,7 +73,6 @@ fix(tag): preserve serato geob frames on rewrite
 docs(spec): record beatport api host is not cloudflare-fronted
 ```
 
-
 ## working agreements
 
 - **measure, do not assume.** if a claim can be tested locally in under an
@@ -86,7 +85,7 @@ docs(spec): record beatport api host is not cloudflare-fronted
 - **no secrets in the repo, ever.** no cookie files, no tokens. runtime config
   lives in `~/.config/musicpipeline/`.
 - **`README.md` is updated in the same pr as the work it describes.** it states
-  what exists and runs *today*, never what is planned — the plan lives in
+  what exists and runs _today_, never what is planned — the plan lives in
   `tasks/plan.md` and the design in `SPEC.md`. a milestone is not done until the
   README matches it: commands that do not work yet are not listed, and commands
   that now work are. a README describing unbuilt features is worse than a short
@@ -97,7 +96,7 @@ docs(spec): record beatport api host is not cloudflare-fronted
 
 - **never set `user.email` or `user.name` locally in this repo.** the global
   config is already correct: `vishesh
-  <64042847+stixvish@users.noreply.github.com>`. a local override shadows it
+<64042847+stixvish@users.noreply.github.com>`. a local override shadows it
   silently and the mistake only surfaces at push time.
 - the account has **email privacy enabled** (`gh api user` returns
   `"email": null`). pushing a commit authored from a real address is rejected
@@ -118,7 +117,7 @@ file.
   constants. never impose the lowercase prose style on identifiers.
 - **type hints on every public function.** `mypy` runs in strict mode on `src/`.
 - docstrings on modules and public functions, google style (`Args:`/`Returns:`).
-- comments explain *why*, never *what*.
+- comments explain _why_, never _what_.
 
 **ruff is both linter and formatter.** one tool, no black, no isort, no flake8.
 
@@ -131,34 +130,48 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E","W","F","I","N","D","UP","B","A","C4","RET","SIM","ARG","PTH","ANN","S","T20"]
-ignore = ["D203","D213","ANN101","ANN102"]
+ignore = ["D203","D213"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["D","ANN","S101"]   # asserts and undocumented fixtures are fine in tests
+"tools/*" = ["T20","ANN","D","S603","S607"]   # standalone operator scripts, not library code
 
 [tool.ruff.format]
 indent-style = "space"
 quote-style  = "double"
 ```
 
+**`ANN101`/`ANN102` are not in `ignore`**: ruff removed both, and listing a
+removed rule makes ruff warn on every run. `pyproject.toml` is the file that
+executes; this block mirrors it, and the two must not drift.
+
 `T20` bans stray `print` in `src/` — the CLI writes through a single output
-module so the web ui (`SPEC.md` §14) can capture the same messages. `S` catches
-the security footguns that matter here: `subprocess` without a list, `requests`
-without a timeout.
+module so the web ui (`SPEC.md` §14) can capture the same messages. **that
+reasoning is why `tools/*` is exempt**: those are standalone operator scripts
+whose entire interface is stdout, and they import nothing from `src/`. `S`
+catches the security footguns that matter here: `subprocess` without a list,
+`requests` without a timeout — `S603`/`S607` are waived in `tools/` only, where
+every subprocess argument is a literal.
+
+**`# fmt: off` is allowed around a data table whose alignment carries meaning**
+— `tools/camelot.py`'s circle-of-fifths tables read down the column, and one
+entry per line destroys what the table is for. this is a formatter directive,
+not a lint suppression; the rule against silencing checks below still stands in
+full.
 
 ## every file type gets a formatter
 
 ruff covers python only. nothing else may be left unformatted.
 
-| files | tool | notes |
-|---|---|---|
-| `*.py` | **ruff** (lint + format) | 2-space, 88 cols |
-| `*.toml` | **taplo** | `pyproject.toml`, `library.toml` |
-| `templates/*.html` | **djlint** | jinja-aware; a plain HTML formatter mangles `{% %}` |
-| `*.css` `*.js` `*.json` `*.md` | **prettier** | 2-space |
+| files                          | tool                     | notes                                               |
+| ------------------------------ | ------------------------ | --------------------------------------------------- |
+| `*.py`                         | **ruff** (lint + format) | 2-space, 88 cols                                    |
+| `*.toml`                       | **taplo**                | `pyproject.toml`, `library.toml`                    |
+| `templates/*.html`             | **djlint**               | jinja-aware; a plain HTML formatter mangles `{% %}` |
+| `*.css` `*.js` `*.json` `*.md` | **prettier**             | 2-space                                             |
 
 ```toml
 # taplo.toml
