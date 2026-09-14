@@ -67,56 +67,56 @@ branch `feat/foundation`
 branch `feat/spine`. the thinnest complete path. **no second source until this
 works end to end.**
 
-- [ ] **1.1 `probe.py`** — ffprobe over the tree → path, **decoded-audio md5**
+- [x] **1.1 `probe.py`** — ffprobe over the tree → path, **decoded-audio md5**
       (F44), duration, ISRC, existing tags → the `files` table.
       **verify:** reproduces `cache/audiomd5.tsv` and `cache/isrc.tsv` on all
       1,494 rows exactly, and the counts match §2 (1,494 / 1,439 / 55).
-- [ ] **1.2 `sources/ratelimit.py` and `sources/base.py`** — token bucket at
+- [x] **1.2 `sources/ratelimit.py` and `sources/base.py`** — token bucket at
       20 req/min (F8); shared httpx client with **mandatory timeouts** (ruff `S`
       catches a `requests`/`httpx` call without one).
       **verify:** a unit test proves the bucket blocks the 21st call inside a
       minute · no HTTP call anywhere lacks a timeout.
-- [ ] **1.3 `sources/spotify.py`** — client-credentials auth,
+- [x] **1.3 `sources/spotify.py`** — client-credentials auth,
       `/v1/search?q=isrc:{ISRC}&type=track&limit=10`, pydantic v2 models, **raw
       JSON persisted to `recordings`**.
       **verify:** the 8 ISRCs in §7b's table return their recorded release sets ·
       a second run makes zero API calls.
-- [ ] **1.4 `release.py` (§7b)** — pure ranking: `album` > `single` >
+- [x] **1.4 `release.py` (§7b)** — pure ranking: `album` > `single` >
       `compilation`, then **1-track releases LAST**, then `release_date` ASC.
       `prefer_standard_edition = true` by default.
       **verify:** all 8 rows of §7b's table · the `NAV - Never Sleep` deluxe case
       picks `4/19` not `4/20` · the `Kamariya` promo case picks `Stree` (2/4),
       not the 1-track `Kamariya (From "Stree")`.
-- [ ] **1.5 `naming.py` (§7a)** — render `{Name} (ft. {Features}) [{Mix}]`; the
+- [x] **1.5 `naming.py` (§7a)** — render `{Name} (ft. {Features}) [{Mix}]`; the
       mix-normalisation table; the separator style (comma between all, `&` before
       the last). **no source's title string is written verbatim.**
       **verify:** `Extended Mix`/`Extended Version` → `Extended` ·
       `Blessings - Odd Mob Remix` splits into name + `TIT3` · all three separator
       forms from §7a · `Original` is never invented where no source states it.
-- [ ] **1.6 `arbitrate.py` (§7)** — the rows reachable from spotify alone, with
+- [x] **1.6 `arbitrate.py` (§7)** — the rows reachable from spotify alone, with
       **provenance recorded per field**. a hand-edited `library.toml` value
       outranks every source.
       **verify:** every written field carries a named source · a manual override
       wins and is marked `manual`.
-- [ ] **1.7 `tag.py`** — mutagen ID3-on-AIFF, **only the frames in §7d**. `TOPE`
+- [x] **1.7 `tag.py`** — mutagen ID3-on-AIFF, **only the frames in §7d**. `TOPE`
       is not written at all on non-remixes.
       **verify:** round-trip on a **copied** AIFF · **a synthetic `GEOB` frame
       survives the rewrite** (serato's beatgrids live there — `CLAUDE.md`).
-- [ ] **1.8 `library_map.py` (§9b)** — generate, merge and read back
+- [x] **1.8 `library_map.py` (§9b)** — generate, merge and read back
       `library.toml`, keyed by audio md5. the merge rule: the resolver never
       overwrites what it did not write.
       **verify:** a hand-edited line survives a regenerate and is marked
       `manual` · clearing a value returns that field to resolver control ·
       `taplo fmt --check` passes on the output.
-- [ ] **1.9 `cli.py`** — `probe`, `resolve --limit N`, `diff`, `apply --out DIR`,
+- [x] **1.9 `cli.py`** — `probe`, `resolve --limit N`, `diff`, `apply --out DIR`,
       `map` with the §9c view flags.
       **verify:** `music-metadata map --missing beatport` renders TSV · `diff`
       shows old → new per field.
-- [ ] **1.10 `web/jobs.py` — background execution**, and the library screen over
+- [x] **1.10 `web/jobs.py` — background execution**, and the library screen over
       real rows, with `resolve` running as a job and progress polled.
       **verify:** a 20-track resolve runs from the browser and progress advances
       without holding an HTTP request open.
-- [ ] **1.11 update `README.md`.** add `probe`, `resolve --limit N`, `diff`,
+- [x] **1.11 update `README.md`.** add `probe`, `resolve --limit N`, `diff`,
       `apply --out DIR` and `map` with **real example output** from the 20-track
       run. record where the output tree and `library.toml` land. state that only
       spotify-derived fields are populated so far.
