@@ -243,7 +243,9 @@ title tag; the only tags are `major_brand`, `encoder` and friends. the 1,494
 AIFFs were produced from these. **every ISRC in the library is therefore
 second-hand**, written by the earlier process the operator distrusts.
 
-**F17 — but those ISRCs check out.** comparing each resolved ISRC's musicfetch
+**F17 — those ISRCs came from spotify, and they check out.** the operator
+confirms the library's ISRCs were originally taken from spotify, which explains
+why they identify the **streaming** release rather than the beatport one (F22). comparing each resolved ISRC's musicfetch
 title against the filename across the 20-track sample: **18 agree outright**,
 and both apparent misses are correct matches where apple appends soundtrack
 context — `Roke Na Ruke Naina` vs `Roke Na Ruke Naina (From "Badrinath Ki
@@ -599,6 +601,58 @@ spotify's flattened list. for bollywood specifically that is the worst case,
 since it is exactly where composers pollute `artists[]`. the affected tracks are
 **flagged for review rather than silently accepted** (G6).
 
+**F32 — musicfetch's `appleMusic.id` points at an arbitrary release, so track
+and disc numbers must come from the *chosen* release.** measured on
+`USJI10000001` (\*NSYNC — Bye Bye Bye):
+
+```
+musicfetch appleMusic.id  1741747057
+  itunes lookup   album='Beach Beats'          trk=138/150  disc=1/1   ← a 150-track compilation
+  spotify (§7b)   album='No Strings Attached'  trk=1/12     disc=1     ← correct
+  library today   album='No Strings Attached…' trk=1        disc=1
+```
+
+**`138/150` is what F4's design would have written.** the appleMusic id musicfetch
+returns is whichever release its matcher landed on, frequently a compilation —
+`Beach Beats` here, `Naacho Naacho - Party Songs` for `Kamariya`. iTunes has no
+ISRC search, so the *set* of apple releases cannot be enumerated to pick a better
+one.
+
+**spotify's track object carries both `track_number` and `disc_number`**, on the
+release §7b deliberately selected. so track and disc come from spotify, and
+**iTunes is demoted** to what it is still uniquely good for:
+
+- **artwork** — the 3000×3000 mzstatic URL (F5)
+- **genre fallback** — `primaryGenreName`
+- corroboration of title and date
+
+this removes the last dependency on an unvetted release id.
+
+**F33 — release date: the recording's earliest, not the chosen album's.**
+these differ, and the difference is large enough to matter:
+
+| ISRC | chosen release | spotify earliest | itunes | musicbrainz |
+|---|---|---|---|---|
+| `USJI10000001` | 2000-03-21 | **2000-01-17** | 2000-01-11 | n/a |
+| `GBARL1201392` | 2012-10-29 | **2012-10-11** | 2012-10-11 | 2012-04-16 |
+| `INS181801821` | 2018-08-22 | **2018-08-09** | 2018-08-09 | n/a |
+| `USUG12509635` | 2026-02-05 | **2026-02-05** | 2026-02-06 | 2026-02-05 |
+
+per operator decision the tags split:
+
+- **`date` / `year`** — the **minimum release date across every release carrying
+  the ISRC**, i.e. when the recording first appeared.
+- **`album`, `album artist`, `track`, `disc`** — from the **chosen release**
+  (§7b).
+
+spotify is primary for the earliest date because it is the only source that
+enumerates every release for an ISRC. the others corroborate but cannot lead:
+**iTunes** reports only its one release (and was a day later on the illenium
+track — a territory artefact), and **musicbrainz `first-release-date`** was
+absent on 2 of 4 and returned **2012-04-16** for a track released in October
+2012, six months early. musicbrainz is therefore corroboration only, and a
+disagreement greater than 60 days is **flagged, not averaged**.
+
 **F8 — rate limits are gentler in practice than documented.**
 published Starter is 6 req/min ([musicfetch.io](https://musicfetch.io/) pricing,
 checked 2026-09-14). measured: **20 sequential requests at 1 req/s, all HTTP
@@ -738,9 +792,9 @@ feature in the deck display. **needs a decision** (§12).
 | artist | **musicbrainz artist-credit** — performers only (§6, F28) | filename parse | itunes `artistName` |
 | album | **itunes `collectionName`** | spotify | — |
 | album artist | **main artists only** (§6, §7a) | itunes `artistName` | artist |
-| track number | **itunes `trackNumber`** (F3) | — | — |
-| disc number | **itunes `discNumber`** (F3) | — | — |
-| release date | **itunes `releaseDate`** | beatport `publish_date` | — |
+| track number | **spotify chosen release `track_number`** (F32) | itunes (unvetted release) | — |
+| disc number | **spotify chosen release `disc_number`** (F32) | itunes (unvetted release) | — |
+| release date | **spotify MIN across all releases** (F33) | itunes | musicbrainz `first-release-date` |
 | year | derived from release date | — | — |
 | **genre** | **beatport `sub_genre` if present, else `genre`** — wherever a beatport listing exists, regardless of style (operator decision) | itunes `primaryGenreName` | existing tag |
 | artwork | apple master at configured size (F5) | existing embedded art | — |
@@ -937,6 +991,10 @@ F28).
     `isrc` are **discarded**.
   zero results is a normal outcome, not a failure. the fraction of tracks landing
   in each class is reported by `verify`.
+- **G9 no cross-recording contamination.** when the duration class is "different
+  edit", the written ISRC must equal the file's own. adopting beatport's ISRC for
+  a longer recording is a correctness failure, not a metadata improvement, and
+  `verify` asserts it never happens.
 - **G6 artist-credit agreement.** musicbrainz and the filename agree on the
   main/featured split for ≥95% of the 418 featured tracks. disagreements are
   queued for review, never auto-resolved.
@@ -1072,14 +1130,13 @@ live APIs, marked and excluded from the default run.
   no-rewrite size musicfetch returns) when the 3000² substitution fails.
 - ~~**OQ-2 beatport auth.**~~ **resolved by live capture** — F11. session-cookie
   → token minting is verified working against the operator's account.
-- **OQ-8 the library holds radio edits of dance remixes.** measured on
-  `Blessings`: every remix in the library is **80-137 seconds shorter** than the
-  beatport release (F23). for a DJ library the extended version is the one worth
-  having (F23a). options: (a) leave it — tagging is not re-acquisition;
-  (b) have `verify` **flag** tracks whose beatport match is materially longer, as
-  a re-acquisition worklist; (c) have tier 0 prefer extended versions on new
-  downloads. **(b) recommended** — it surfaces the problem without silently
-  re-downloading a library. needs a decision.
+- ~~**OQ-8 the library holds radio edits of dance remixes.**~~ **decided: flag,
+  never substitute.** `verify` emits a re-acquisition worklist naming every track
+  whose beatport match is **materially longer** (>15s), with both durations and
+  the beatport URL. it **never rewrites the file and never adopts beatport's
+  ISRC** — the operator's point is decisive: the beatport record is a *different
+  recording*, so taking its ISRC would label the file as a track it is not. this
+  is why F23's field-class split exists.
 - ~~**bollywood `(From "…")` suffix.**~~ **resolved by §7b** — the suffix marks a
   compilation release. choosing the correct release removes it; no string
   stripping needed.
