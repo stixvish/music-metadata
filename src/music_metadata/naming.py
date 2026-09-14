@@ -199,3 +199,24 @@ def render_title(
   if mix:
     out += f" [{mix}]"
   return out
+
+
+def split_filename(stem: str) -> tuple[str, str]:
+  """Split `Artist - Title` as the operator's own filenames are shaped.
+
+  §6 ranks the filename **second** for artist credit, above spotify and itunes,
+  because it is the operator's own curation — it agreed with musicbrainz on
+  every case where both were present. It is a first-class source here, not a
+  last resort.
+
+  Args:
+    stem: the filename without its suffix.
+
+  Returns:
+    The artist part and the title part. When there is no separator the whole
+    stem is the title and the artist part is empty.
+  """
+  artist, sep, title = stem.partition(" - ")
+  if not sep:
+    return ("", stem.strip())
+  return (artist.strip(), title.strip())

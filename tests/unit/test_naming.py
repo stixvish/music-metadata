@@ -5,6 +5,7 @@ from music_metadata.naming import (
   normalise_mix,
   remixer_from_mix,
   render_title,
+  split_filename,
   split_title,
 )
 
@@ -236,3 +237,34 @@ def test_original_is_never_invented():
   """§7a: `Original` goes to TIT3 only when the source states it."""
   assert split_title("Blessings").mix is None
   assert render_title("Blessings", (), None) == "Blessings"
+
+
+# --- the filename, which §6 ranks above spotify and itunes -------------------
+
+
+def test_a_filename_splits_on_the_separator():
+  assert split_filename("*NSYNC - Bye Bye Bye") == ("*NSYNC", "Bye Bye Bye")
+
+
+def test_a_filename_with_a_feature_keeps_it_in_the_title_part():
+  artist, title = split_filename("Arizona Zervas - OH MY LORD (ft. 24kGoldn)")
+
+  assert artist == "Arizona Zervas"
+  assert title == "OH MY LORD (ft. 24kGoldn)"
+
+
+def test_a_filename_title_parses_the_feature_out():
+  _, title = split_filename("Arizona Zervas - OH MY LORD (ft. 24kGoldn)")
+
+  assert split_title(title).features == ("24kGoldn",)
+
+
+def test_a_filename_with_no_separator_is_all_title():
+  assert split_filename("Untitled") == ("", "Untitled")
+
+
+def test_only_the_first_separator_splits():
+  artist, title = split_filename("A - B - C")
+
+  assert artist == "A"
+  assert title == "B - C"
