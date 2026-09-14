@@ -1,0 +1,25 @@
+# the check gate from CLAUDE.md, in the order it specifies. all must pass
+# before a commit. never silence a check to get to green.
+pre-commit:
+  parallel: false
+  commands:
+    1_ruff_format:
+      run: uv run ruff format --check .
+    2_ruff_lint:
+      run: uv run ruff check .
+    3_taplo:
+      run: taplo fmt --check .
+    4_djlint:
+      run: uv run djlint src/music_metadata/web/templates --check
+    5_prettier:
+      run: prettier --check "**/*.{css,js,json,md}"
+    6_mypy:
+      run: uv run mypy
+    7_pytest:
+      run: uv run pytest -q
+
+pre-push:
+  parallel: false
+  commands:
+    tests:
+      run: uv run pytest -q
