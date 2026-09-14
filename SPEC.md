@@ -1170,15 +1170,14 @@ outside ±5s → different edit  → take genre, sub_genre, label ONLY (F23)
 ```
 zero results is normal; genre then falls back to itunes.
 
-**step 4 — artwork (§7c).** only now does musicfetch appear, and only as the
-first of three candidates:
+**step 4 — artwork (§7c).** three candidates, all free, **no musicfetch** (F37):
 ```
-A  musicfetch appleMusic.id → itunes /lookup → collectionName == chosen album?
-      here: 'Beach Beats' ≠ 'No Strings Attached'  → REJECT
-B  itunes /search?term='*NSYNC No Strings Attached'&entity=album
-      here: 'No Strings Attached'  → ACCEPT
-C  spotify album image (~640px)                    → not needed
-upgrade artworkUrl100 → 3000x3000bb.jpg            → 2256 KB
+A  itunes /search?term='*NSYNC No Strings Attached'&entity=album
+      here: 'No Strings Attached' == chosen album   → ACCEPT
+B  itunes /search?term='*NSYNC Bye Bye Bye'&entity=song
+      not needed here; this is the path that finds `18 Months`
+C  spotify album image (~640px)                     → not needed
+upgrade artworkUrl100 → 3000x3000bb.jpg             → 2256 KB
 ```
 
 **step 5 — assemble and write to the sidecar.** apply §7 precedence and §7a
@@ -1246,16 +1245,16 @@ credit is accepted automatically. when they disagree, the track is **flagged for
 review rather than guessed**. the disagreement rate is reported by `verify`, not
 assumed.
 
-**OQ-4 — tag shape.** the roles are now known; how they are written is a
-separate decision:
+**OQ-4 — tag shape. decided: option A, the feature lives in the title.**
 
 | option | `artist` | `title` | `album artist` |
 |---|---|---|---|
-| A — feature in title | `Dua Lipa` | `Levitating (feat. DaBaby)` | `Dua Lipa` |
+| **A — feature in title** ← | `Dua Lipa` | `Levitating (feat. DaBaby)` | `Dua Lipa` |
 | B — feature in artist | `Dua Lipa ft. DaBaby` | `Levitating` | `Dua Lipa` |
 
 A keeps artist columns clean and sorts correctly in rekordbox; B surfaces the
-feature in the deck display. **needs a decision** (§12).
+feature in the deck display. the sorting argument won. the full shape is
+specified in §7a — `{Name} (ft. {Features}) [{Mix}]`.
 
 
 ## 7. field precedence
@@ -1398,11 +1397,12 @@ recording, which is exactly what `TPE4` means.
 this is why §6's main/featured split is load-bearing: get it wrong and a feature
 is promoted into `album artist`, which fragments the album in rekordbox.
 
-**OQ-7 — separator style.** the library currently mixes `&` and `,` in artist
-strings (`Calvin Harris & Clementine Douglas` vs `Calvin Harris, Clementine
-Douglas & Odd Mob`). serato and rekordbox both treat the field as one opaque
-string, so this is cosmetic — but it should be *consistently* cosmetic. proposed:
-comma-separate all but the last, `&` before the last. **needs confirmation.**
+**OQ-7 — separator style. decided** (and specified in full earlier in this
+section). the library currently mixes `&` and `,` in artist strings
+(`Calvin Harris & Clementine Douglas` vs `Calvin Harris, Clementine Douglas &
+Odd Mob`). serato and rekordbox both treat the field as one opaque string, so
+this is cosmetic — but it should be *consistently* cosmetic: comma between every
+artist, `&` before the last.
 
 
 ## 7b. release selection
@@ -1515,24 +1515,30 @@ F28).
 trusted or preserved on the assumption it is correct — it is replaced whenever a
 **verified** source is found, and kept only when none is.
 
-the danger is not resolution, it is **identity**: musicfetch's track image is the
-cover of whichever release its matcher landed on, and that is a compilation often
-enough to matter (F34). so every candidate is verified against the release chosen
-in §7b before its bytes are used.
+the danger is not resolution, it is **identity**: an image returned for a track
+is the cover of whichever release the matcher landed on, and that is a
+compilation often enough to matter (F34). so every candidate is verified against
+the release chosen in §7b before its bytes are used.
 
-**the chain, in order. the first candidate that verifies wins.**
+**the chain, in order. the first candidate that verifies wins.** this is the
+**post-F37 chain: musicfetch is not in it.** an earlier revision opened with
+musicfetch's `appleMusic.id`; F37 measured that two itunes search entities
+reproduce its results byte for byte on 4/4 probes, and musicfetch was removed
+from tier 1 entirely. **the library path needs no musicfetch token** (F36).
 
 ```
 1. §7b has already chosen the release  →  album name + album artist
 
-2. candidate A — musicfetch appleMusic.id
-     itunes /lookup?id={appleMusic.id}
-     ACCEPT only if collectionName matches the chosen album name
+2. candidate A — itunes album search
+     itunes /search?term={album artist} {album}&entity=album
+     ACCEPT the first result whose collectionName matches the chosen album
      (exact on normalised text, or the chosen name contained in it)
 
-3. candidate B — itunes album search
-     itunes /search?term={album artist} {album}&entity=album
+3. candidate B — itunes song search        ← replaces musicfetch (F37)
+     itunes /search?term={album artist} {track name}&entity=song
      ACCEPT the first result whose collectionName matches the same way
+     this is the path that finds `18 Months`, where entity=album
+     returns only `96 Months` — a different record
 
 4. candidate C — spotify's album image from the chosen release
      correct by construction, but capped around 640px
@@ -1546,16 +1552,18 @@ accepted `artworkUrl100` (F5). on non-200 or a short read, step down 3000 → 14
 
 **measured on four tracks, 4/4 produced 3000×3000:**
 
-| ISRC | album | musicfetch id | accepted via | size |
-|---|---|---|---|---|
-| `USJI10000001` | No Strings Attached | `Beach Beats` ✗ | album search | 2256 KB |
-| `INS181801821` | Stree | `Naacho Naacho…` ✗ | album search | 1755 KB |
-| `GBARL1201392` | 18 Months | `18 Months` ✓ | appleMusic.id | 2162 KB |
-| `USUG12509635` | ODYSSEY | `ODYSSEY` ✓ | appleMusic.id | 2919 KB |
+| ISRC | album | accepted via | size |
+|---|---|---|---|
+| `USJI10000001` | No Strings Attached | A — album search | 2256 KB |
+| `INS181801821` | Stree | A — album search | 1755 KB |
+| `GBARL1201392` | 18 Months | **B — song search** | 2162 KB |
+| `USUG12509635` | ODYSSEY | A — album search | 2919 KB |
 
-**candidate A is right about half the time and wrong silently**, which is exactly
-why the verification step exists rather than trusting the id. candidate B is not
-a fallback for rare cases — it carried half this sample.
+**candidate B is not a fallback for rare cases**, and the `18 Months` row is why
+it exists: album search returns `96 Months` there and nothing else. the retired
+musicfetch candidate was right about half the time and **wrong silently**, which
+is why every candidate is verified against the chosen release rather than
+trusted.
 
 **the name check must reject, not coerce.** searching iTunes for
 `Calvin Harris 18 Months` returns exactly one album: **`96 Months`**, a different
@@ -1682,8 +1690,11 @@ the §7e position on BPM.
 
 ## 8. gates — a stage is not done until these pass
 
-- **G1 identity.** ≥95% of the 1,439 ISRC tracks resolve to a musicfetch result.
-  measured baseline: 20/20.
+- **G1 identity.** ≥95% of the 1,439 ISRC tracks resolve to at least one spotify
+  release via `/v1/search?q=isrc:`. measured baseline: 20/20. **this gate was
+  written against musicfetch and re-pointed at spotify by F36/F37**, which
+  removed musicfetch from the library path; the threshold is unchanged because
+  the ISRC, not the service, is what identity rests on.
 - **G2 completeness.** ≥98% of resolved tracks carry all eight required fields.
 - **G3 beatport match and field class.** beatport is searched by **artist +
   name + mix name**, never via musicfetch's link (F23 predecessor), and ISRC is
@@ -2103,6 +2114,25 @@ src/music_metadata/
 tests/{unit,integration}/
 ```
 
+root-level docs, and what each is for:
+
+| file | holds |
+|---|---|
+| `SPEC.md` | what we are building, and why each decision went the way it did |
+| `CLAUDE.md` | how we work — style, tooling, commits, working agreements |
+| `tasks/plan.md` | the build order, its dependency graph and its checkpoints |
+| `tasks/todo.md` | the task list, with acceptance criteria per task |
+| `README.md` | **what exists and runs today** — the current state, nothing planned |
+
+**`README.md` covers:** what the project does in a paragraph, prerequisites
+(`uv`, `ffmpeg`, the `.env` keys actually needed), install, **the commands that
+work today** with real example output, where the output tree and `library.toml`
+land, how to start the web ui, and the gate numbers from the most recent run.
+
+it is a status report, not a brochure: it names which milestone has landed and
+what is not built yet. the cadence — updated in the same pr as the work it
+describes — is a working agreement and lives in `CLAUDE.md`.
+
 **runtime stack.** python ≥3.12, managed with `uv`. `mutagen` for ID3-on-AIFF
 (the only library that writes AIFF ID3 chunks correctly), `httpx` for HTTP with
 timeouts and retries, `pydantic` v2 for the source response models, `fastapi` +
@@ -2162,6 +2192,11 @@ live APIs, marked and excluded from the default run.
 - **OQ-5 official beatport credentials.** the operator will supply client id and
   secret via `.env` when obtained. `OAuthClientProvider` reads them;
   `CookieSessionProvider` runs until then (F15). not a blocker.
+- **OQ-12 the `.env` key is named `MUSICMATCH_TOKEN`, but this spec says
+  musicfetch throughout.** either the key is misnamed or it authenticates a
+  different service. **not a v1 blocker** — F36/F37 removed musicfetch from the
+  library path entirely, so nothing in v1 reads it. resolve it before tier 0
+  (§10), which is the one place `/url` is genuinely irreplaceable (F19).
 - ~~**OQ-4 tag shape.**~~ **decided** — fully specified in §7a:
   `{Name} (ft. {Features}) [{Mix}]`, `TPE4` remixer only for third-party remixes,
   `TIT3` mix name always, `Extended Mix` → `Extended`.

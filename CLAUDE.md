@@ -85,6 +85,12 @@ docs(spec): record beatport api host is not cloudflare-fronted
   first, write second.
 - **no secrets in the repo, ever.** no cookie files, no tokens. runtime config
   lives in `~/.config/musicpipeline/`.
+- **`README.md` is updated in the same pr as the work it describes.** it states
+  what exists and runs *today*, never what is planned — the plan lives in
+  `tasks/plan.md` and the design in `SPEC.md`. a milestone is not done until the
+  README matches it: commands that do not work yet are not listed, and commands
+  that now work are. a README describing unbuilt features is worse than a short
+  one, because it is read as a status report and it lies.
 - push back when an approach has a real problem; do not agree by default.
 
 ## git identity
