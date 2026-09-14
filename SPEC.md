@@ -1275,8 +1275,13 @@ flattens every contributor into one list with no role. measured on real tracks:
 | `Arizona Zervas - OH MY LORD (ft. 24kGoldn)` | `['Arizona Zervas', '24kGoldn']` | main + **feature**, indistinguishable |
 | `Internet Money - Options (ft. 24kGoldn)`    | `['Internet Money', '24kGoldn']` | main + **feature**, indistinguishable |
 
-**418 of 1,494 files (28%)** encode a feature in the filename, and 196 more
-carry multiple _main_ artists. this is not an edge case.
+**398 of 1,494 files (26.6%)** encode a feature in the filename, and 401 carry
+a separator in the artist part. this is not an edge case.
+
+> re-counted 2026-09-14: an earlier revision said 418 and 28%. the library uses
+> exactly one spelling — `(ft.` followed by a space — on 398 files; no
+> `(feat.`, `(featuring` or bracketed variant occurs at all.
+> **G6's denominator is 398.**
 
 **musicbrainz solves it structurally.** its `artist-credit` array carries an
 explicit `joinphrase` per element, so the boundary is machine-readable rather
@@ -1787,8 +1792,8 @@ the §7e position on BPM.
   a longer recording is a correctness failure, not a metadata improvement, and
   `verify` asserts it never happens.
 - **G6 artist-credit agreement.** musicbrainz and the filename agree on the
-  main/featured split for ≥95% of the 418 featured tracks. disagreements are
-  queued for review, never auto-resolved.
+  main/featured split for ≥95% of the **398** featured tracks (re-counted §6).
+  disagreements are queued for review, never auto-resolved.
 - **G4 non-destruction.** the source tree's bytes are unchanged after any run.
   asserted by checksum, not by inspection.
 - **G5 artwork — verified identity, always refetched.** every output file
