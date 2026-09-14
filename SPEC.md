@@ -236,6 +236,51 @@ endpoints, field mapping, ISRC gating and rate limiting are identical either
 way. **this unblocks tier 3 now and makes adopting official credentials a
 one-class swap**, so the build is never waiting on beatport's business process.
 
+**F16 — the library's ISRCs were *resolved*, not carried from source.**
+`~/Music/.staging` holds **1,517 M4A** files named by youtube video id
+(`_026NPNnsnY.m4a`) with **no metadata at all** — sampled 11, zero carried a
+title tag; the only tags are `major_brand`, `encoder` and friends. the 1,494
+AIFFs were produced from these. **every ISRC in the library is therefore
+second-hand**, written by the earlier process the operator distrusts.
+
+**F17 — but those ISRCs check out.** comparing each resolved ISRC's musicfetch
+title against the filename across the 20-track sample: **18 agree outright**,
+and both apparent misses are correct matches where apple appends soundtrack
+context — `Roke Na Ruke Naina` vs `Roke Na Ruke Naina (From "Badrinath Ki
+Dulhania")`. effectively **20/20**. the ISRC-first design in §5 stands; the
+titles will need a `(From "…")` normalisation decision, not the ISRCs.
+
+**F18 — yt-dlp returns structured music metadata, but not identity.**
+youtube music `- Topic` channels carry real fields:
+
+```
+track         Silk and Cologne (Spider-Verse Remix)
+artists       ['EI8HT', 'Offset']      ← flattened, same defect as spotify (§6)
+album         METRO BOOMIN PRESENTS SPIDER-MAN: ACROSS THE SPIDER-VERSE
+release_date  20230602
+```
+
+there is **no ISRC, no genre, no track or disc number**, and `artists` reproduces
+exactly the main/featured flattening §6 exists to fix. useful as corroboration,
+insufficient as a source.
+
+**F19 — musicfetch `/url` recovers the ISRC from a youtube URL directly.**
+this is the finding that makes acquisition cheap. feeding
+`music.youtube.com/watch?v={id}` to `/url` returns a fully resolved track:
+
+```
+8 of 8 staging video ids → ISRC recovered   (100%)
+4 of 8 also carried a beatport link
+```
+
+**no fingerprinting, no text search, no edition ambiguity.** `fpcalc`
+(chromaprint) and a text-search path were both probed and work, but neither is
+needed: text search on the itunes API returned three near-identical editions for
+one track — standard, deluxe, and *instrumental* — which is precisely the
+mis-selection `/url` avoids by resolving identity rather than guessing it.
+fingerprinting stays documented as the fallback for audio that `/url` cannot
+resolve.
+
 **F8 — rate limits are gentler in practice than documented.**
 published Starter is 6 req/min ([musicfetch.io](https://musicfetch.io/) pricing,
 checked 2026-09-14). measured: **20 sequential requests at 1 req/s, all HTTP
@@ -419,23 +464,67 @@ be re-run freely while the resolver runs once. AIFF tags are written as ID3;
 frames we do not own (serato's `GEOB` beatgrids and cue points) are preserved,
 never rewritten.
 
-## 10. non-goals (v1)
+## 10. acquisition — tier 0, a front-end not a second pipeline
 
-- **the 55 no-ISRC files** — deferred. they need text search with a confidence
-  gate, and they are 3.7% of the library.
+the operator wants to keep adding tracks from youtube music rather than buying
+every one on beatport. F19 makes this a small addition rather than a parallel
+system:
+
+```
+yt-dlp  →  audio file + youtube video id
+                    │
+                    ▼
+        musicfetch /url  (F19)  →  ISRC
+                    │
+                    ▼
+        ┌───────────────────────────────┐
+        │  §5 tiers 1-3, entirely       │
+        │  unchanged                    │
+        └───────────────────────────────┘
+```
+
+**acquisition ends the moment an ISRC exists.** everything downstream — genre,
+artwork, artist credit, track and disc number, BPM and key — is the pipeline
+already specified. tier 0 adds one API call and one new failure mode, not a
+second architecture.
+
+**it also retires two v1 non-goals.** the same `/url` and fingerprint machinery
+resolves the **55 no-ISRC library files** and the **7 beatport WAVs** (§11).
+they stay out of v1 by sequencing, not because they need different tooling.
+
+**gate G7 — acquisition identity.** a downloaded track is only admitted to the
+library once it carries an ISRC *and* that ISRC's resolved duration is within
+±5s of the downloaded audio. a `/url` result that disagrees on duration is a
+wrong match, and youtube is full of edits, sped-up versions and live cuts that
+resolve confidently to the studio recording. measured baseline: 8/8 resolved.
+
+**OQ-6 — lossy source, lossless container.** the source is **AAC at ~257 kbps**
+(measured across `.staging`); the library is AIFF. the conversion costs **5.4×**
+storage — 9.5 GB → 51.9 GB measured — and **adds no quality**, since nothing is
+recoverable that the AAC encoder discarded. the existing 1,494 files are already
+converted and are not in scope to revisit. the open question is **new**
+acquisitions: keep AIFF for consistency with the current library and DJ-app
+behaviour, or keep M4A and convert only what gets played out. needs a decision.
+
+
+## 11. non-goals (v1)
+
+- **the 55 no-ISRC files** — deferred by sequencing only. §10 tier 0 resolves
+  them with the same machinery; they are 3.7% of the library and can wait.
 - **the 7 beatport WAVs** — deferred. RIFF `INFO` has no standard slot for album
   artist, disc number, ISRC, or embedded art; tagging them reliably means
-  converting to AIFF, which is a separate decision.
+  converting to AIFF, which is a separate decision (see OQ-6).
 - **cloudflare evasion** — F6. if the beatport API path fails, the genre tier
   degrades to apple; we do not build a challenge solver.
 - cue points, beatgrids, crates — owned by the DJ apps.
 - playlist and crate provenance.
 
-## 11. project structure, commands, testing
+## 12. project structure, commands, testing
 
 ```
 src/music_metadata/
   cli.py            # entry point
+  acquire.py        # tier 0 — yt-dlp + /url identity (§10)
   probe.py          # ffprobe → local tag facts
   sources/
     musicfetch.py   # tier 1 — identity + service ids
@@ -456,6 +545,7 @@ python ≥3.12 · `uv` · `mutagen` · `httpx` · `pydantic` v2 · `ruff` · `my
 `pytest`. google style, 2-space indent.
 
 ```
+music-metadata acquire URL           # tier 0 — download + resolve identity
 music-metadata probe                 # local tag survey, no network
 music-metadata resolve [--limit N]   # tiers 1-3 → sidecar
 music-metadata diff                  # proposed changes, old → new
@@ -469,7 +559,7 @@ network. the tag writer is tested round-trip on a copied AIFF, including an
 assertion that a synthetic `GEOB` frame survives. one integration test hits the
 live APIs, marked and excluded from the default run.
 
-## 12. open questions
+## 13. open questions
 
 - **OQ-1 artwork size.** 1400² is free and needs no URL rewriting; 3000² costs
   ~4.3 GB across the library and relies on undocumented substitution (F5); 4500²
