@@ -707,6 +707,27 @@ do that, because it matches the recording exactly.
 same album by name** — iTunes is never allowed to choose which release is
 canonical.
 
+**F36 — the library path does not need musicfetch, except for artwork
+candidate A.** running the full chain with musicfetch removed resolved every
+field on three probe tracks — spotify by ISRC, musicbrainz by ISRC, itunes by
+album search. the single regression was `GBARL1201392` (`18 Months`), where
+itunes album search returns **`96 Months`** and only musicfetch's verified
+`appleMusic.id` found the right cover.
+
+so musicfetch's value splits sharply:
+
+- **tier 0 (acquisition): unique and high.** `/url` turns a youtube link into an
+  ISRC (F19, 8/8). nothing else in the stack does this.
+- **tier 1 (library): narrow.** one of three artwork candidates, right about
+  half the time (F34), and the only path to an apple release id when album-name
+  search fails.
+
+its `name`, `genres`, `releaseDate`, `label` and `services.beatport` are all
+either superseded or demonstrably wrong (F23, F32, F34). **this is worth knowing
+before renewing a $100/month plan**: the library backfill could run on the free
+tiers alone at the cost of some artwork coverage, while acquisition genuinely
+depends on it.
+
 **F8 — rate limits are gentler in practice than documented.**
 published Starter is 6 req/min ([musicfetch.io](https://musicfetch.io/) pricing,
 checked 2026-09-14). measured: **20 sequential requests at 1 req/s, all HTTP
@@ -770,6 +791,73 @@ tier 3 is **optional and isolated behind an adapter**. if beatport auth breaks,
 it returns nothing, genre falls back to tier 1, and the pipeline still completes.
 this is the single most likely component to break and it is the one nothing else
 depends on.
+
+## 5a. what happens to one track, start to finish
+
+worked on `*NSYNC - Bye Bye Bye.aiff`, with the real values each call returned.
+
+**step 0 — read the file. no network.**
+```
+ffprobe → TSRC = USJI10000001
+```
+if there is no ISRC, the track goes to the tier-0 path (§10) instead.
+
+**step 1 — spotify, queried DIRECTLY by ISRC.** *(not via musicfetch)*
+```
+GET /v1/search?q=isrc:USJI10000001&type=track&limit=10
+→ 10 releases
+```
+rank them `album > single > compilation`, then `total_tracks` DESC, then
+`release_date` ASC (§7b). this yields two different things:
+
+```
+chosen release   → No Strings Attached | album artist *NSYNC | trk 1/12 | disc 1
+earliest date    → 2000-01-17   = MIN(release_date) over ALL 10 releases
+```
+
+the chosen release supplies `album`, `album artist`, `track`, `disc`. the
+earliest date supplies `date`/`year` — these come from **different rows** of the
+same response (F33).
+
+**step 2 — musicbrainz, also queried directly by ISRC.**
+```
+GET /ws/2/isrc/{ISRC}?inc=artist-credits+artist-rels+work-rels
+→ artist-credit joinphrases  → main vs featured split (§6)
+→ performance relation       → work id
+GET /ws/2/work/{id}?inc=artist-rels
+→ composer, lyricist         → TCOM, TEXT
+```
+on `Not Found`, fall back to the spotify/itunes `(feat. …)` title parse and flag
+the track. on `currently busy`, **retry** — that is not a miss (F30).
+
+**step 3 — beatport.** try `?isrc=` first; on zero results search by
+artist + name + mix name (F22). compare durations:
+```
+within ±5s  → same recording → take genre, sub_genre, label, bpm, key, mix_name
+outside ±5s → different edit  → take genre, sub_genre, label ONLY (F23)
+```
+zero results is normal; genre then falls back to itunes.
+
+**step 4 — artwork (§7c).** only now does musicfetch appear, and only as the
+first of three candidates:
+```
+A  musicfetch appleMusic.id → itunes /lookup → collectionName == chosen album?
+      here: 'Beach Beats' ≠ 'No Strings Attached'  → REJECT
+B  itunes /search?term='*NSYNC No Strings Attached'&entity=album
+      here: 'No Strings Attached'  → ACCEPT
+C  spotify album image (~640px)                    → not needed
+upgrade artworkUrl100 → 3000x3000bb.jpg            → 2256 KB
+```
+
+**step 5 — assemble and write to the sidecar.** apply §7 precedence and §7a
+naming; **no audio file is touched.** `diff` shows the proposed change, `apply`
+writes to the output tree.
+
+**the order that matters:** spotify first, because its release choice is the
+input to everything else — the album name drives the artwork search, and the
+track/disc numbers come from that release rather than from any id another
+service hands over.
+
 
 ## 6. artist credit — the featured-artist problem
 
