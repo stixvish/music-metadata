@@ -728,6 +728,43 @@ before renewing a $100/month plan**: the library backfill could run on the free
 tiers alone at the cost of some artwork coverage, while acquisition genuinely
 depends on it.
 
+**F37 — itunes alone covers artwork; musicfetch is not needed in tier 1.**
+the one case musicfetch uniquely solved (`18 Months`, where
+`entity=album` returns `96 Months`) is solved by searching **`entity=song` with
+the track name** and filtering on `collectionName`:
+
+```
+entity=album  term='Calvin Harris 18 Months'      1 result,  0 album hits
+entity=song   term='Calvin Harris Sweet Nothing'  24 results, 2 album hits → collectionId 1713469222
+```
+
+the two-entity chain reproduces musicfetch's results **byte for byte**:
+
+| ISRC | album | via | size |
+|---|---|---|---|
+| `USJI10000001` | No Strings Attached | `entity=album` | 2256 KB |
+| `INS181801821` | Stree | `entity=album` | 1755 KB |
+| `GBARL1201392` | 18 Months | `entity=song` | 2162 KB |
+| `USUG12509635` | ODYSSEY | `entity=album` | 2919 KB |
+
+**musicfetch is therefore removed from tier 1 entirely** (operator decision). it
+remains **required for tier 0**, where `/url` is the only way to turn a youtube
+link into an ISRC (F19).
+
+**F38 — indian repertoire is 167 of 1,494 tracks, and two signals agree on it.**
+
+```
+ISRC country prefix == IN     144
+genre matches indian/bollywood/punjabi/telugu/tamil   165
+both                          142
+either  → scope               167   (11% of the library)
+```
+
+the signals overlap on 142, so neither alone is sufficient: **2** IN-prefixed
+tracks carry a western genre, and **23** indian-genre tracks carry a non-IN ISRC
+— diaspora releases such as `Raghav & Tesher — Desperado` (`SGB502383473`,
+singapore). the scope rule is therefore **either** signal, not both.
+
 **F8 — rate limits are gentler in practice than documented.**
 published Starter is 6 req/min ([musicfetch.io](https://musicfetch.io/) pricing,
 checked 2026-09-14). measured: **20 sequential requests at 1 req/s, all HTTP
@@ -770,10 +807,10 @@ Music.** all three misses were bollywood. subject to F9.
         │
         ▼
   ┌───────────────────────────────────────────────┐
-  │ tier 1 · musicfetch /isrc          [PAID]     │
-  │ ROUTER ONLY — service ids, not field values   │
-  │ (its own name/genres/dates are not written)   │
-  │ → appleMusic.id ─┐        ISRC ──────────┐    │
+  │ tier 1 · spotify /search?q=isrc:   [FREE]     │
+  │ enumerates every release for the recording    │
+  │ → chosen release (§7b) · earliest date (F33)  │
+  │ → album · album artist · track · disc ───┐    │
   └──────────────────┼──────────────────────┼────┘
                      ▼                      ▼
   ┌──────────────────────────┐  ┌───────────────────────────┐
@@ -931,7 +968,7 @@ feature in the deck display. **needs a decision** (§12).
 | field | 1st | 2nd | 3rd |
 |---|---|---|---|
 | title | **itunes `trackName`** (parsed, §7a) | spotify | filename parse |
-| artist | **musicbrainz artist-credit** — performers only (§6, F28) | filename parse | itunes `artistName` |
+| artist | **musicbrainz artist-credit** — performers-only filter **in indian scope only** (§6, §7a, F38) | filename parse | itunes `artistName` |
 | album | **itunes `collectionName`** | spotify | — |
 | album artist | **main artists only** (§6, §7a) | itunes `artistName` | artist |
 | track number | **spotify chosen release `track_number`** (F32) | itunes (unvetted release) | — |
@@ -1000,9 +1037,25 @@ verbatim.**
 invented for a track that simply has no mix name.
 
 
-**performer vs composer (F28).** `artist` carries **performing artists only** —
-vocalists and instrumentalists. composers, lyricists and producers go to their
-own frames, never to `artist`:
+**performer vs composer — indian repertoire only (F28, F38).** this rule is
+**scoped, not global.** it applies when either signal fires:
+
+```
+ISRC country prefix == IN   OR   genre matches
+  bollywood | indian | punjabi | telugu | tamil
+```
+
+**167 tracks, 11% of the library.** within that scope `artist` carries
+**performing artists only** — the operator listens by vocalist, and indian
+listings inconsistently promote music directors into `artists[]`.
+
+**everywhere else the full credited artist list is kept.** in western repertoire
+a producer credited as an artist genuinely *is* a main artist — `Metro Boomin`,
+`Calvin Harris`, `Internet Money` are not pollution to be stripped, and applying
+the indian rule globally would corrupt them. this is the operator's call and it
+is the correct one.
+
+in scope, composers and lyricists go to their own frames, never to `artist`:
 
 | role | frame | source |
 |---|---|---|
