@@ -851,7 +851,7 @@ feature in the deck display. **needs a decision** (§12).
 | release date | **spotify MIN across all releases** (F33) | itunes | musicbrainz `first-release-date` |
 | year | derived from release date | — | — |
 | **genre** | **beatport `sub_genre` if present, else `genre`** — wherever a beatport listing exists, regardless of style (operator decision) | itunes `primaryGenreName` | existing tag |
-| artwork | **the §7b-chosen release's cover** via itunes search, at 3000² (F34) | existing embedded art | musicfetch image — **never**, see F34 |
+| artwork | **verified chain §7c** → 3000² | spotify album image (~640px) | existing embedded art (flagged) |
 | label | beatport `release.label` | itunes | — |
 | bpm | **beatport `bpm`** (F14, 100% coverage) | — | — |
 | key | **beatport `key`** (F14, 100% coverage) | — | — |
@@ -1029,6 +1029,64 @@ release, not the recording. the performers-only rule binds `artist` alone (§7a,
 F28).
 
 
+## 7c. artwork
+
+**all artwork is refetched** (operator decision). existing embedded art is not
+trusted or preserved on the assumption it is correct — it is replaced whenever a
+**verified** source is found, and kept only when none is.
+
+the danger is not resolution, it is **identity**: musicfetch's track image is the
+cover of whichever release its matcher landed on, and that is a compilation often
+enough to matter (F34). so every candidate is verified against the release chosen
+in §7b before its bytes are used.
+
+**the chain, in order. the first candidate that verifies wins.**
+
+```
+1. §7b has already chosen the release  →  album name + album artist
+
+2. candidate A — musicfetch appleMusic.id
+     itunes /lookup?id={appleMusic.id}
+     ACCEPT only if collectionName matches the chosen album name
+     (exact on normalised text, or the chosen name contained in it)
+
+3. candidate B — itunes album search
+     itunes /search?term={album artist} {album}&entity=album
+     ACCEPT the first result whose collectionName matches the same way
+
+4. candidate C — spotify's album image from the chosen release
+     correct by construction, but capped around 640px
+
+5. no candidate  →  keep the existing embedded artwork, and flag the track
+```
+
+**upgrade to 3000×3000** by rewriting the trailing `/{N}x{N}bb.jpg` on the
+accepted `artworkUrl100` (F5). on non-200 or a short read, step down 3000 → 1400
+→ 600 rather than failing the track.
+
+**measured on four tracks, 4/4 produced 3000×3000:**
+
+| ISRC | album | musicfetch id | accepted via | size |
+|---|---|---|---|---|
+| `USJI10000001` | No Strings Attached | `Beach Beats` ✗ | album search | 2256 KB |
+| `INS181801821` | Stree | `Naacho Naacho…` ✗ | album search | 1755 KB |
+| `GBARL1201392` | 18 Months | `18 Months` ✓ | appleMusic.id | 2162 KB |
+| `USUG12509635` | ODYSSEY | `ODYSSEY` ✓ | appleMusic.id | 2919 KB |
+
+**candidate A is right about half the time and wrong silently**, which is exactly
+why the verification step exists rather than trusting the id. candidate B is not
+a fallback for rare cases — it carried half this sample.
+
+**the name check must reject, not coerce.** searching iTunes for
+`Calvin Harris 18 Months` returns exactly one album: **`96 Months`**, a different
+record. the normalised comparison rejects it and the chain moves on. a looser
+match — fuzzy ratio, "closest result wins" — would have embedded the wrong cover
+with no signal that anything went wrong.
+
+**storage.** 3000² JPEGs run ~1.7-2.9 MB; across 1,494 tracks that is roughly
+**3-4 GB** added to the output tree, consistent with OQ-1's estimate.
+
+
 ## 8. gates — a stage is not done until these pass
 
 - **G1 identity.** ≥95% of the 1,439 ISRC tracks resolve to a musicfetch result.
@@ -1054,11 +1112,12 @@ F28).
   queued for review, never auto-resolved.
 - **G4 non-destruction.** the source tree's bytes are unchanged after any run.
   asserted by checksum, not by inspection.
-- **G5 artwork — do no harm.** artwork is replaced only when it comes from the
-  §7b-chosen release **and** is larger than what the file already carries. the
-  album name on the artwork's release must match the chosen release's album name;
-  on mismatch the existing art is **kept**. a higher-resolution image of the
-  wrong album is a regression, not an upgrade (F34).
+- **G5 artwork — verified identity, always refetched.** every output file
+  carries art from a **verified** release (§7c): the artwork's `collectionName`
+  must match the §7b-chosen album. artwork is refetched for every track, not
+  merely when larger. when **no** candidate verifies, the existing embedded art
+  is kept and the track is **flagged** — never replaced by an unverified image.
+  `verify` reports the count per candidate tier and the count of flagged tracks.
 
 ## 9. write path — new tree, source never touched
 
@@ -1183,9 +1242,10 @@ live APIs, marked and excluded from the default run.
 
 ## 13. open questions
 
-- ~~**OQ-1 artwork size.**~~ **decided: 3000×3000.** ~4.3 GB across the library;
-  the 4500² ceiling is not worth the extra 5 GB. falls back to 1400² (the
-  no-rewrite size musicfetch returns) when the 3000² substitution fails.
+- ~~**OQ-1 artwork size.**~~ **decided: 3000×3000**, ~3-4 GB measured across the
+  library; the 4500² ceiling is not worth the extra storage. steps down
+  3000 → 1400 → 600 on failure. **all artwork is refetched** from a verified
+  release rather than trusting what is embedded (§7c).
 - ~~**OQ-2 beatport auth.**~~ **resolved by live capture** — F11. session-cookie
   → token minting is verified working against the operator's account.
 - ~~**OQ-8 the library holds radio edits of dance remixes.**~~ **decided: flag,
