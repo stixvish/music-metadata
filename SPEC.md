@@ -653,6 +653,60 @@ absent on 2 of 4 and returned **2012-04-16** for a track released in October
 2012, six months early. musicbrainz is therefore corroboration only, and a
 disagreement greater than 60 days is **flagged, not averaged**.
 
+**F34 — musicfetch's artwork is the artwork of *its* release, which is often a
+compilation.** for `USJI10000001` musicfetch returns a 1400×1400 image whose URL
+carries UPC `196872030730` — **`Beach Beats`**, a stock beach photograph. the
+correct `No Strings Attached` cover is UPC `012414170224`. verified by md5 and
+by eye; they are unrelated images.
+
+```
+musicfetch image   …/196872030730.jpg   md5 26b1e50c…   Beach Beats (beach photo)
+correct album art  …/012414170224.jpg   md5 d8a4f911…   No Strings Attached
+currently embedded 1200×1200            md5 69fd3106…   No Strings Attached ✓
+```
+
+**the library's existing artwork is already correct.** taking artwork from
+musicfetch — as an earlier revision of this spec specified — would have
+**actively degraded** the library, swapping real album covers for compilation
+stock art at higher resolution. a bigger wrong image is worse than a smaller
+right one.
+
+**artwork must come from the release chosen in §7b**, not from the track-level
+image. the path:
+
+```
+§7b picks the release via spotify  →  album name + artist
+  ↓
+itunes /search  term="{artist} {album}"  →  collectionId for that album
+  ↓
+artworkUrl100 → substitute 3000×3000 (F5)
+```
+
+confirmed working end to end: the `No Strings Attached` URL upgrades to
+**3000×3000, 2.2 MB**.
+
+**F35 — itunes *search* does enumerate releases; only the lookup-by-id is
+single-release.** `GET /search?term=…&entity=song` returned **11 distinct
+releases** of `Bye Bye Bye`:
+
+```
+No Strings Attached          1/12   2000-01-17   ← the album
+Bye Bye Bye - Single         1/1    2000-01-11   ← the single
+The Essential *NSYNC         9/17   2000-01-11
+Greatest Hits                1/12   2000-01-11
+…plus workout compilations and a soundtrack
+```
+
+so iTunes *can* be release-selected, by text rather than ISRC. the catch is that
+text search also returns **different recordings** — a
+`Bye Bye Bye (Rock) [feat. Cody Carson]` single and a `Lyle, Lyle, Crocodile`
+soundtrack entry appear in the same result set. spotify's `isrc:` search cannot
+do that, because it matches the recording exactly.
+
+**therefore spotify selects the release and itunes is asked only to locate that
+same album by name** — iTunes is never allowed to choose which release is
+canonical.
+
 **F8 — rate limits are gentler in practice than documented.**
 published Starter is 6 req/min ([musicfetch.io](https://musicfetch.io/) pricing,
 checked 2026-09-14). measured: **20 sequential requests at 1 req/s, all HTTP
@@ -797,7 +851,7 @@ feature in the deck display. **needs a decision** (§12).
 | release date | **spotify MIN across all releases** (F33) | itunes | musicbrainz `first-release-date` |
 | year | derived from release date | — | — |
 | **genre** | **beatport `sub_genre` if present, else `genre`** — wherever a beatport listing exists, regardless of style (operator decision) | itunes `primaryGenreName` | existing tag |
-| artwork | apple master at configured size (F5) | existing embedded art | — |
+| artwork | **the §7b-chosen release's cover** via itunes search, at 3000² (F34) | existing embedded art | musicfetch image — **never**, see F34 |
 | label | beatport `release.label` | itunes | — |
 | bpm | **beatport `bpm`** (F14, 100% coverage) | — | — |
 | key | **beatport `key`** (F14, 100% coverage) | — | — |
@@ -1000,7 +1054,11 @@ F28).
   queued for review, never auto-resolved.
 - **G4 non-destruction.** the source tree's bytes are unchanged after any run.
   asserted by checksum, not by inspection.
-- **G5 artwork.** every output file embeds art at or above the configured floor.
+- **G5 artwork — do no harm.** artwork is replaced only when it comes from the
+  §7b-chosen release **and** is larger than what the file already carries. the
+  album name on the artwork's release must match the chosen release's album name;
+  on mismatch the existing art is **kept**. a higher-resolution image of the
+  wrong album is a regression, not an upgrade (F34).
 
 ## 9. write path — new tree, source never touched
 
