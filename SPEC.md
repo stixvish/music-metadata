@@ -1597,10 +1597,19 @@ textual metadata. so:
   unless the operator first creates the musicbrainz recordings themselves. that
   is the higher-value contribution and the larger undertaking.
 
-**what v1 should do to keep this cheap later:** persist the musicbrainz recording
-id in the sidecar alongside the ISRC whenever one is resolved, and keep the
-chromaprint fingerprint if it is ever computed. both are small columns, and
-without them a future submission pass would have to re-resolve the whole library.
+**the MBID never touches the audio file.** the library carries **no musicbrainz
+identifier today** — verified by scanning the raw bytes of a tagged file: zero
+occurrences of `UFID`, `TXXX`, `MBID` or the string `MusicBrainz`. the only
+identifier present is `TSRC`.
+
+it stays that way. the recording id and any chromaprint fingerprint live **in
+the sidecar SQLite, not in ID3** — two columns in a database the operator can
+delete without touching a single audio file. so the files stay clean *and* a
+future acoustid pass stays cheap; these were never in tension.
+
+without those columns a submission pass would have to re-resolve the whole
+library against musicbrainz at 1 req/s (F28) — roughly 48 minutes — purely to
+recover ids it already had.
 
 **precondition, not a detail:** submitting wrong mappings actively damages a
 shared database. a submission pass must run only over tracks that passed every
