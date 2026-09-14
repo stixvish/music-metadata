@@ -900,6 +900,61 @@ duration      189 s
 this makes "paste a spotify link" a complete identity solution for a file with no
 ISRC (§9d), with **no musicfetch call and no fingerprinting**.
 
+**F46 — label: spotify has no label field at all; discogs' *release* endpoint is
+the clean source.** measured across three tracks.
+
+**spotify does not expose it.** the full album object under client-credentials has
+no `label` key whatsoever:
+
+```
+keys: album_type artists copyrights external_ids external_urls genres href id
+      images name release_date release_date_precision total_tracks tracks type uri
+```
+
+only `copyrights` — `"© 2022 XO Records, LLC and Republic Records,…"` — which is
+a legal entity string, not an imprint. itunes is the same shape (`℗ 2022 XO
+Records, LLC and Republic Records, a division…`). parsing a label out of either
+is lossy guesswork.
+
+**discogs' `/database/search` is unusable for this** — its `label` array
+conflates labels, sub-labels, publishers, pressing plants and **recording
+studios**:
+
+```
+['T-Series', 'Super Cassettes…', …, 'Yash Raj Studio', 'Audiogarage Studios',
+ 'Enzy Studios', 'J.S. Workstation', 'Sound Ideas Studio']
+```
+
+**`/releases/{id}` is clean.** labels are typed, and studios are correctly
+separated into `companies[]` with their roles:
+
+```
+labels[]  : ['T-Series (Label)']
+companies : ['Super Cassettes Industries Pvt. Ltd. [Copyright (c)]',
+             'Future Sound Of Bombay [Mixed At]']        ← not labels
+```
+
+```
+Demons Protected By Angels  labels: XO, Republic Records
+18 Months                   labels: Sony Music, Fly Eye, Columbia, Deconstruction
+Badrinath Ki Dulhania       labels: T-Series
+```
+
+so discogs requires **two calls** (search → release) and the second is the only
+one worth reading. filter `labels[]` on `entity_type_name == "Label"`.
+
+**F47 — discogs `styles` is a better genre fallback than itunes.**
+
+| release | discogs style | discogs genre | itunes genre |
+|---|---|---|---|
+| Demons Protected By Angels | `Trap` | Hip Hop | Hip-Hop/Rap |
+| 18 Months | `House, Synth-pop, Electro` | Electronic | Dance |
+| Badrinath Ki Dulhania | `Bollywood, Soundtrack` | Stage & Screen | Bollywood |
+
+`House / Synth-pop / Electro` against itunes' flat `Dance` is the difference that
+matters for a DJ library. discogs slots **below beatport, above itunes** in the
+genre chain (§7).
+
 **F8 — rate limits are gentler in practice than documented.**
 published Starter is 6 req/min ([musicfetch.io](https://musicfetch.io/) pricing,
 checked 2026-09-14). measured: **20 sequential requests at 1 req/s, all HTTP
@@ -1113,9 +1168,9 @@ where the operator has asserted a value, no source is consulted for that field.
 | disc number | **spotify chosen release `disc_number`** (F32) | itunes (unvetted release) | — |
 | release date | **spotify MIN across all releases** (F33) | itunes | musicbrainz `first-release-date` |
 | year | derived from release date | — | — |
-| **genre** | **beatport `sub_genre` if present, else `genre`** — wherever a beatport listing exists, regardless of style (operator decision) | itunes `primaryGenreName` | existing tag |
+| **genre** | **beatport `sub_genre` if present, else `genre`** — wherever a beatport listing exists, regardless of style (operator decision) | **discogs `styles[0]`** (F47) | itunes `primaryGenreName`, then existing tag |
 | artwork | **verified chain §7c** → 3000² | spotify album image (~640px) | existing embedded art (flagged) |
-| label | beatport `release.label` | itunes | — |
+| label | **beatport `release.label`** (operator preference) | discogs `/releases/{id}` `labels[]` (F46) | itunes/spotify `copyright` — parsed, last resort |
 | bpm | **beatport `bpm`** (F14, 100% coverage) | — | — |
 | key | **beatport `key`** (F14, 100% coverage) | — | — |
 | mix name (`TIT3`) | beatport `mix_name` (F24) | parsed from itunes title | filename bracket |
@@ -1284,6 +1339,14 @@ a bonus or deluxe edition always has more tracks than the standard album, so
 "most tracks" systematically prefers the variant. "1-track last, then earliest"
 gets both cases right.
 
+**deluxe editions are acceptable, and the default still prefers the standard.**
+the operator is not opposed to a track being attributed to a deluxe release. the
+default is `prefer_standard_edition = true` for one concrete reason: the album
+*name* is cleaner — `Demons Protected By Angels` rather than
+`Demons Protected By Angels (Bonus Version)` — and that string goes in `TALB` and
+sorts in rekordbox. the track number was identical here (`4/19` vs `4/20`), so
+nothing is lost. set it false to take whichever release the ranking picks.
+
 **the promo-single clause is load-bearing.** ranking by release date alone picks
 the wrong release for `Kamariya`:
 
@@ -1415,7 +1478,7 @@ outside this table is written.**
 | track number | `TRCK` | chosen release `track_number` (F32) | ~100% |
 | disc number | `TPOS` | chosen release `disc_number` (F32) | ~100% |
 | genre | `TCON` | beatport where listed, else itunes | 100% |
-| label | `TPUB` | beatport `release.label`, else itunes | ~72% today |
+| label | `TPUB` | beatport → discogs `labels[]` → copyright parse (F46) | ~72% today |
 | ISRC | `TSRC` | the file's own tag, once G10 trusts it | 96.3% |
 | **mix name** | `TIT3` | beatport `mix_name`, else parsed from title | remixes + edits |
 | **remixer** | `TPE4` | parsed from mix name, beatport confirms | third-party remixes only |
@@ -1776,6 +1839,7 @@ src/music_metadata/
     itunes.py       # artwork + genre fallback (F32/F37)
     musicbrainz.py  # tier 2 — artist-credit roles (§6)
     spotify.py      # tier 1 — release selection, track/disc (§7b)
+    discogs.py      # tier 2 — label + styles, 2 calls (F46/F47)
     beatport.py     # tier 3 — genre/bpm/key
     bp_auth.py      # pluggable TokenProvider: cookie | oauth (F15)
     ratelimit.py    # token bucket, 20/min (F8)
@@ -1842,9 +1906,11 @@ live APIs, marked and excluded from the default run.
   stripping needed.
 - ~~**OQ-7 artist separator style.**~~ **decided:** comma between every artist,
   `&` before the last (§7a).
-- **OQ-10 discogs.** worth an API key for style, label, catalog number and
-  credits — **not** for BPM or key, which it does not have (§7e). the operator
-  can add `DISCOGS_TOKEN` to `.env`. low priority: it adds depth, not coverage.
+- ~~**OQ-10 discogs.**~~ **adopted.** `DISCOGS_TOKEN` is in `.env`. discogs is
+  **tier 2**, supplying `label` (F46) and a `styles` genre fallback that beats
+  itunes (F47). still **not** a BPM or key source — it has neither (§7e). costs
+  two calls per track (search → release), so it runs only when beatport has no
+  listing.
 - **OQ-11 local BPM/key analysis.** ~120 MB of dependencies for fields rekordbox
   recomputes anyway. **recommendation: defer** — write beatport's values, leave
   the rest empty, revisit when the library is otherwise correct.
