@@ -1,0 +1,39 @@
+{% extends "base.html" %} {% block title %}review · music-metadata{% endblock %}
+{% block content %}
+    <h1>review queue</h1>
+    <p class="empty">
+        {{ total }} tracks flagged. the gates refuse to guess — these are the
+        decisions the pipeline declined to make on its own.
+    </p>
+    {% for gate, rows in groups.items() %}
+        <section class="gate">
+            <h2>{{ gate }} <span class="count">{{ rows | length }}</span></h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>track</th>
+                        <th>proposed</th>
+                        <th>source</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in rows %}
+                        <tr>
+                            <td>{{ row.file }}</td>
+                            <td>{{ row.proposed }}</td>
+                            <td class="src">{{ row.source }}</td>
+                            <td>
+                                <button hx-post="/review/{{ row.md5 }}/accept"
+                                        hx-target="closest tr"
+                                        hx-swap="outerHTML">accept</button>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </section>
+    {% else %}
+        <p class="empty">nothing flagged.</p>
+    {% endfor %}
+{% endblock %}

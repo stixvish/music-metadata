@@ -27,9 +27,17 @@ _TEMPLATES = Jinja2Templates(directory=str(_HERE / "templates"))
 # data that justifies them exists — a review queue with nothing to review is
 # not worth building twice.
 _PLACEHOLDERS = {
-  "review": "the review queue fills once the gates have something to flag (M2).",
   "acquire": "tier 0 acquisition lands after the library is tagged (M6).",
   "diff": "diff and apply land with the tag writer (M1).",
+}
+
+# how each flag reads as a heading in the queue. §14: the flags are worthless in
+# a log file and valuable in a queue, grouped by the gate that raised them.
+_GATE_LABELS = {
+  "credit-disagreement": "G6 · musicbrainz and the filename disagree on the credit",
+  "no-artwork": "G5 · no verified artwork",
+  "no-release": "no release found",
+  "no-isrc": "G10 · no ISRC",
 }
 
 
@@ -54,6 +62,37 @@ def create_app(store: Store) -> FastAPI:
     return _TEMPLATES.TemplateResponse(
       request=request, name="library.html", context={"files": files}
     )
+
+  @app.get("/review", response_class=HTMLResponse)
+  def review(request: Request) -> HTMLResponse:
+    """The flagged tracks, grouped by the gate that raised them.
+
+    §14: this is the screen that justifies the ui. the gates in §8 deliberately
+    refuse to guess, and those refusals are decisions someone has to make.
+    """
+    groups: dict[str, list[dict[str, str]]] = {}
+    for row in store.query("SELECT * FROM review ORDER BY flag, file"):
+      label = _GATE_LABELS.get(row["flag"], row["flag"])
+      groups.setdefault(label, []).append(
+        {
+          "md5": row["audio_md5"],
+          "file": row["file"],
+          "proposed": row["proposed"] or "",
+          "source": row["source"] or "",
+        }
+      )
+    total = sum(len(rows) for rows in groups.values())
+    return _TEMPLATES.TemplateResponse(
+      request=request,
+      name="review.html",
+      context={"groups": groups, "total": total},
+    )
+
+  @app.post("/review/{md5}/accept", response_class=HTMLResponse)
+  def accept(request: Request, md5: str) -> HTMLResponse:
+    """Accept a flagged value and clear it from the queue."""
+    store.resolve_review(md5)
+    return _TEMPLATES.TemplateResponse(request=request, name="accepted.html")
 
   @app.get("/{screen}", response_class=HTMLResponse)
   def placeholder(request: Request, screen: str) -> HTMLResponse:

@@ -97,3 +97,17 @@ CREATE TABLE IF NOT EXISTS map_generated (
   value     TEXT,
   PRIMARY KEY (audio_md5, field)
 );
+
+-- the review queue (§14). the gates in §8 refuse to guess — a flagged track is
+-- a decision someone has to make, and §6 is explicit that disagreements are
+-- "queued for review, never auto-resolved". a flag in a log file is worthless;
+-- here it is a worklist.
+CREATE TABLE IF NOT EXISTS review (
+  audio_md5 TEXT NOT NULL,
+  flag      TEXT NOT NULL,
+  file      TEXT,
+  proposed  TEXT,
+  source    TEXT,
+  PRIMARY KEY (audio_md5, flag)
+);
+CREATE INDEX IF NOT EXISTS review_flag ON review (flag);
