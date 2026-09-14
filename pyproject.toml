@@ -70,8 +70,9 @@ convention = "google"
 # asserts and undocumented fixtures are fine in tests. S603/S607: the fixtures
 # shell out to ffmpeg to build real audio, with literal argument lists and no
 # shell — the same reasoning that exempts tools/. ARG: a mock transport handler
-# takes the request whether or not the test looks at it.
-"tests/*" = ["D", "ANN", "S101", "S603", "S607", "ARG"]
+# takes the request whether or not the test looks at it. S105/S106: fake
+# credentials in fixtures are the point, not a leak.
+"tests/*" = ["D", "ANN", "S101", "S603", "S607", "ARG", "S105", "S106"]
 # tools/ holds standalone operator scripts, not library code. CLAUDE.md scopes
 # T20 to src/ precisely because the CLI there writes through an output module;
 # these scripts print as their entire interface. their subprocess calls pass

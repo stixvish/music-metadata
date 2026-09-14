@@ -64,12 +64,29 @@ class Source:
     self.bucket = bucket
     self.retries = retries
     self._sleep = sleep
+    self._timeout = timeout
     self._client = httpx.Client(
       base_url=base_url,
       headers=headers or {},
       timeout=timeout,
       transport=transport,
     )
+
+  @property
+  def timeout(self) -> httpx.Timeout:
+    """The per-request timeout this source uses."""
+    return self._timeout
+
+  def set_header(self, name: str, value: str) -> None:
+    """Set a header sent with every subsequent request.
+
+    Used for bearer tokens that are refreshed during a run.
+
+    Args:
+      name: the header name.
+      value: the header value.
+    """
+    self._client.headers[name] = value
 
   def close(self) -> None:
     """Close the underlying connection pool."""
