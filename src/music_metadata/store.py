@@ -77,8 +77,10 @@ class Store:
     try:
       conn.executescript(_SCHEMA.read_text())
       yield cls(conn)
-      conn.commit()
     finally:
+      # no trailing commit: every write below commits as it goes, so a commit
+      # here has no transaction to close and raises when a background job
+      # (web/jobs.py) is still writing as the context exits.
       conn.close()
 
   # --- raw access ------------------------------------------------------------
