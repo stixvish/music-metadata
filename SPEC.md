@@ -1359,7 +1359,11 @@ src/music_metadata/
   arbitrate.py      # §7 precedence
   artwork.py        # fetch + size policy (§11 OQ-1)
   tag.py            # ID3-on-AIFF writer, preserves foreign frames
-  store.py          # sidecar cache
+  store.py          # sidecar cache (sqlite, shared with the web ui)
+  web/
+    app.py          # fastapi — library, review, acquire, diff (§14)
+    jobs.py         # background resolve/acquire with progress
+    static/         # single-page frontend
 tests/{unit,integration}/
 ```
 
@@ -1410,3 +1414,45 @@ live APIs, marked and excluded from the default run.
 - ~~**OQ-3 remix identity.**~~ **resolved by measurement (F21)** — every remix
   carries its own ISRC; 10 of 10 `Blessings` variants resolved distinctly. no
   title matching needed.
+
+## 14. web ui
+
+**the web ui is the primary interface, not a wrapper over a CLI** (operator
+decision — the operator does not want to drive this from a terminal). the CLI
+remains, as the engine the UI calls and the way anything scriptable runs, but
+every routine action must be reachable from the browser.
+
+**it exists because this pipeline generates decisions, not just output.** the
+gates in §8 deliberately refuse to guess — flagged artist credits (G6),
+unverified artwork (G5), beatport edit mismatches (G3), the re-acquisition
+worklist (OQ-8). those flags are worthless in a log file and valuable in a
+queue.
+
+**four screens.**
+
+1. **library** — every track, sortable and filterable by artist, album, genre,
+   year, and resolution state. this is also where the operator confirms the
+   tagging actually looks right at a glance.
+2. **review queue** — the flagged tracks, grouped by gate. each row shows the
+   proposed value beside the current one, the source that supplied it, and
+   accept / reject / edit. **this is the screen that justifies the UI.**
+3. **acquire** — paste a youtube or youtube music URL, watch the tier-0 chain
+   run (§10), and see the resolved identity before the download is admitted.
+   surfaces the G8 premium-audio precondition (F20) as a visible status rather
+   than a failed run.
+4. **diff / apply** — the proposed change set for a batch, reviewable in the
+   browser, with `apply` gated behind an explicit confirmation.
+
+**architecture.** fastapi serving a small single-page frontend; the sidecar
+SQLite database (§9) is the shared state between CLI and UI, so neither is
+authoritative over the other. long operations (`resolve`, `acquire`) run as
+background jobs with progress polled from the job table — a 72-minute resolve
+(F8) cannot block an HTTP request.
+
+**local-first.** binds to localhost, no auth, no multi-user. it reads and writes
+the operator's own library on the operator's own machine; anything else is out
+of scope.
+
+**not in scope for v1:** playback, waveform display, crate or playlist
+management, editing audio. rekordbox and serato own those.
+
