@@ -70,9 +70,10 @@ class Recording:
 class Work:
   """the writing credits on a recording's work.
 
-  measured on a 12-track sample: **every credit came back as `writer`**, with no
-  `composer` and no `lyricist` at all. the three are kept separate here so the
-  caller decides what a bare `writer` means rather than this module guessing.
+  F52 measured the split by repertoire: indian works carry explicit `composer`
+  and `lyricist` (10/10), western works use the role-less `writer` (34 of 34).
+  the three are kept separate here so the caller decides what a bare `writer`
+  means, rather than this module quietly asserting a role.
   """
 
   composers: tuple[str, ...]
@@ -162,28 +163,7 @@ class MusicBrainz:
       f"/ws/2/isrc/{isrc}",
       params={"inc": "artist-credits+work-rels", "fmt": "json"},
     )
-    if not isinstance(raw, dict):
-      return (None, raw)
-
-    recordings = raw.get("recordings")
-    if not isinstance(recordings, list) or not recordings:
-      return (None, raw)
-
-    first = recordings[0]
-    if not isinstance(first, dict):
-      return (None, raw)
-
-    return (
-      Recording(
-        mbid=str(first.get("id", "")),
-        title=str(first.get("title", "")),
-        credit=split_credit(first.get("artist-credit")),
-        work_id=_work_id(first.get("relations")),
-        length_ms=_maybe_int(first.get("length")),
-        first_release_date=_maybe_str(first.get("first-release-date")),
-      ),
-      raw,
-    )
+    return (recording_from_raw(raw), raw)
 
   def work(self, work_id: str) -> tuple[Work, JsonValue]:
     """Look up a work's writing credits.
@@ -197,10 +177,47 @@ class MusicBrainz:
     raw = self._source.get_json(
       f"/ws/2/work/{work_id}", params={"inc": "artist-rels", "fmt": "json"}
     )
-    if not isinstance(raw, dict):
-      return (Work((), (), ()), raw)
+    return (work_from_raw(raw), raw)
 
-    buckets: dict[str, list[str]] = {"composer": [], "lyricist": [], "writer": []}
+
+def recording_from_raw(raw: JsonValue) -> Recording | None:
+  """Re-parse a stored ISRC payload with no network call (§9a).
+
+  Args:
+    raw: the payload as `recording_for_isrc` stored it.
+
+  Returns:
+    The recording, or None when the payload holds none.
+  """
+  if not isinstance(raw, dict):
+    return None
+  recordings = raw.get("recordings")
+  if not isinstance(recordings, list) or not recordings:
+    return None
+  first = recordings[0]
+  if not isinstance(first, dict):
+    return None
+  return Recording(
+    mbid=str(first.get("id", "")),
+    title=str(first.get("title", "")),
+    credit=split_credit(first.get("artist-credit")),
+    work_id=_work_id(first.get("relations")),
+    length_ms=_maybe_int(first.get("length")),
+    first_release_date=_maybe_str(first.get("first-release-date")),
+  )
+
+
+def work_from_raw(raw: JsonValue) -> Work:
+  """Re-parse a stored work payload with no network call (§9a).
+
+  Args:
+    raw: the payload as `work` stored it.
+
+  Returns:
+    The writing credits.
+  """
+  buckets: dict[str, list[str]] = {"composer": [], "lyricist": [], "writer": []}
+  if isinstance(raw, dict):
     relations = raw.get("relations")
     if isinstance(relations, list):
       for relation in relations:
@@ -210,15 +227,11 @@ class MusicBrainz:
         artist = relation.get("artist")
         if kind in buckets and isinstance(artist, dict) and artist.get("name"):
           buckets[kind].append(str(artist["name"]))
-
-    return (
-      Work(
-        composers=tuple(buckets["composer"]),
-        lyricists=tuple(buckets["lyricist"]),
-        writers=tuple(buckets["writer"]),
-      ),
-      raw,
-    )
+  return Work(
+    composers=tuple(buckets["composer"]),
+    lyricists=tuple(buckets["lyricist"]),
+    writers=tuple(buckets["writer"]),
+  )
 
 
 def _work_id(relations: JsonValue) -> str | None:
