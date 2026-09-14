@@ -340,32 +340,73 @@ GBARL2501127  Blessings - Odd Mob Remix
 …             10 of 10 distinct
 ```
 
-**F22 — beatport supports exact ISRC lookup, so musicfetch's link is not needed.**
-`/v4/catalog/tracks/?isrc={ISRC}` returns `count: 1` and an exact match:
+**F22 — beatport supports exact ISRC lookup, but the streaming and beatport
+releases carry *different* ISRCs.** `/v4/catalog/tracks/?isrc={ISRC}` does work
+and returns `count: 1` on an exact hit. but matching the library against beatport
+this way returns **0 of 9** for the `Blessings` remixes, while matching on
+artist + mix name returns **9 of 9**:
 
-```
-?isrc=GBARL2500759  →  Blessings / Max Styler Remix / GBARL2500759   exact
-```
+| remix | library ISRC | beatport ISRC |
+|---|---|---|
+| CamrinWatsin | `GBARL2501117` | `GBARL2501120` |
+| Malugi | `GBARL2501118` | `GBARL2501121` |
+| Airwolf Paradise | `GBARL2501119` | `GBARL2501122` |
+| HUGEL, Adam Trigger & Casa Mata | `GBARL2501124` | `GBARL2501129` |
+| MistaJam | `GBARL2501125` | `GBARL2501130` |
+| Will Clarke | `GBARL2501126` | `GBARL2501131` |
+| Odd Mob | `GBARL2501127` | `GBARL2501132` |
+| Schak | `GBARL2501128` | `GBARL2501133` |
+| COASTR. | `GBARL2501139` | `GBARL2501140` |
 
-(only `isrc` works; `isrc_exact`, `isrc__eq` and `q` are silently ignored and
-return the unfiltered catalogue — a param typo looks like a result, so the
-returned ISRC must always be compared, never assumed.)
+**ISRC-only matching is therefore wrong for precisely the tracks that matter
+most** — dance remixes, where beatport is the only source with a useful genre.
+an earlier revision of this spec made ISRC the sole beatport key; that was a
+mistake and is corrected here.
 
-**F23 — musicfetch's beatport link is demonstrably wrong on a real track.**
-for `GBARL2500591` (Blessings, original) musicfetch returned beatport id
-`20462394`. that id is **Blessings — Extended Mix, ISRC `GBARL2500592`**: a
-different recording. beatport's own ISRC lookup for `GBARL2500591` returns
-**zero results** — the track is not on beatport at all, and musicfetch supplied
-a plausible-looking neighbour instead.
+**F23 — the two releases are different recordings, not duplicate registrations.**
+measured durations settle it:
 
-this is the F9 failure mode caught in the act, and it would have silently tagged
-a radio edit with the extended mix's metadata. **tier 3 therefore queries
-beatport by ISRC directly and ignores `services.beatport` entirely.**
+| remix | library | beatport | delta |
+|---|---|---|---|
+| Airwolf Paradise | 203s | 289s | +86s |
+| CamrinWatsin | 226s | 336s | +110s |
+| COASTR. | 223s | 330s | +107s |
+| Malugi | 161s | 241s | +80s |
+| MistaJam | 166s | 303s | +137s |
+| Odd Mob | 189s | 272s | +83s |
+| HUGEL, Adam Trigger & Casa Mata | 158s | 293s | +135s |
 
-coverage cost is real and worth stating: of the 10 `Blessings` variants, **only
-1 had a musicfetch beatport link, and that one was wrong.** the nine remixes —
-the most DJ-relevant tracks in the set — are simply not on beatport under those
-ISRCs.
+the library holds the **short streaming edits**; beatport holds the **extended
+versions**. the separate ISRCs are correct — these are genuinely different
+recordings of the same work.
+
+**this splits beatport's fields into two classes:**
+
+- **work-level, safe to copy across the edit boundary:** `genre`, `sub_genre`,
+  `label`, `remixers`, and the mix identity. a remix's genre does not change
+  between its radio edit and its extended version.
+- **recording-level, must NOT be copied when durations disagree:** `bpm`, `key`,
+  `length`, `catalog_number`, `isrc`. writing beatport's 330s extended-mix BPM
+  onto a 223s radio edit is a silent factual error.
+
+**gate G3 is rewritten accordingly** — duration decides which class transfers,
+rather than accepting or rejecting the whole record.
+
+a related catch: the one no-ISRC `Blessings` file in the library is **330s**,
+exactly matching beatport's `Extended Mix` (`GBARL2500592`, 330s). duration alone
+identifies it. the same trick is worth trying across the 55 no-ISRC files (§10).
+
+**F23a — in dance music the extended mix is the primary release.** the radio
+edit is the derived, shortened version, not the other way round. beatport's
+catalogue reflects this: it stocks the extended and remix versions and generally
+not the radio cut. two consequences:
+
+- `Extended` is **not** a variant marker to be de-prioritised; for a DJ library
+  it is the preferred version.
+- **the library currently holds the wrong versions.** all nine `Blessings`
+  remixes are streaming edits 80-137 seconds shorter than the beatport release.
+  nothing in the tagging pipeline can fix that — it is an **acquisition**
+  concern, recorded as OQ-8.
 
 **F24 — beatport's data model already encodes the remixer rule.**
 `mix_name` and `remixers` are separate fields, and `remixers` is empty exactly
@@ -376,8 +417,15 @@ Blessings / "Extended Mix"      remixers: []              ← not a remix
 Blessings / "Max Styler Remix"  remixers: ["Max Styler"]  ← a remix
 ```
 
-so when a verified beatport match exists, remixer and mix name are read
-directly rather than parsed out of a title (§7a).
+but `remixers` is **sparsely populated**: across 15 `Blessings` tracks only
+`Cassian` and `Max Styler` carried it; the other thirteen — including every
+remix in the library — returned an empty array despite an unambiguous
+`mix_name`. **`mix_name` is reliable, `remixers` is not.** the remixer is
+therefore parsed from `mix_name` (§7a) and beatport's `remixers` is used only to
+confirm it.
+
+beatport's `bpm` is not always trustworthy either: `Odd Mob Remix` is reported
+at **67 bpm**, a half-time detection error on a 130-ish track.
 
 **F25 — the library's existing tag convention is already close to the target.**
 a remix in the library today carries:
@@ -585,7 +633,7 @@ verbatim.**
 
 | observed | normalised |
 |---|---|
-| `Extended Mix`, `Extended Version`, `Extended` | **`Extended`** |
+| `Extended Mix`, `Extended Version`, `Extended` | **`Extended`** (the primary release in dance — F23a) |
 | `Radio Edit`, `Radio Mix`, `Radio Version` | **`Radio Edit`** |
 | `Original Mix`, `Original Version` | **`Original`** |
 | `{X} Remix`, `{X} Edit`, `{X} Flip`, `{X} VIP` | unchanged, `{X}` → `TPE4` |
@@ -616,11 +664,17 @@ comma-separate all but the last, `&` before the last. **needs confirmation.**
 - **G1 identity.** ≥95% of the 1,439 ISRC tracks resolve to a musicfetch result.
   measured baseline: 20/20.
 - **G2 completeness.** ≥98% of resolved tracks carry all eight required fields.
-- **G3 beatport ISRC agreement.** beatport is queried **by ISRC** (F22), never
-  via musicfetch's link (F23). the returned `isrc` is still compared to the one
-  sent, because an unsupported filter param returns the unfiltered catalogue
-  rather than an error. zero results is a normal outcome — genre falls back to
-  itunes — not a failure.
+- **G3 beatport match and field class.** beatport is searched by **artist +
+  name + mix name**, never via musicfetch's link (F23 predecessor), and ISRC is
+  tried first only as a fast path — it succeeds on originals and fails on
+  remixes (F22). a candidate is accepted when artist and normalised mix name
+  agree. then **duration decides which fields transfer** (F23):
+  - within ±5s → the recording is the same; **all** fields transfer.
+  - outside ±5s → same work, different edit; **only** `genre`, `sub_genre`,
+    `label` and remixer identity transfer. `bpm`, `key`, `length` and beatport's
+    `isrc` are **discarded**.
+  zero results is a normal outcome, not a failure. the fraction of tracks landing
+  in each class is reported by `verify`.
 - **G6 artist-credit agreement.** musicbrainz and the filename agree on the
   main/featured split for ≥95% of the 418 featured tracks. disagreements are
   queued for review, never auto-resolved.
@@ -755,6 +809,14 @@ live APIs, marked and excluded from the default run.
   no-rewrite size musicfetch returns) when the 3000² substitution fails.
 - ~~**OQ-2 beatport auth.**~~ **resolved by live capture** — F11. session-cookie
   → token minting is verified working against the operator's account.
+- **OQ-8 the library holds radio edits of dance remixes.** measured on
+  `Blessings`: every remix in the library is **80-137 seconds shorter** than the
+  beatport release (F23). for a DJ library the extended version is the one worth
+  having (F23a). options: (a) leave it — tagging is not re-acquisition;
+  (b) have `verify` **flag** tracks whose beatport match is materially longer, as
+  a re-acquisition worklist; (c) have tier 0 prefer extended versions on new
+  downloads. **(b) recommended** — it surfaces the problem without silently
+  re-downloading a library. needs a decision.
 - **OQ-7 artist separator style.** comma-separate all but the last, `&` before
   the last? cosmetic but should be consistent (§7a).
 - **OQ-5 official beatport credentials.** the operator will supply client id and
