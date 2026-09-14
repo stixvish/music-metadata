@@ -117,6 +117,77 @@ call as yourself, not scraping** — no HTML parsing, no markup to break, no
 challenge to defeat. it is strictly more durable than the HTML path and is the
 plan of record.
 
+**F11 — beatport auth: a month-long cookie mints 10-minute tokens.**
+captured live from a logged-in session. `www.beatport.com/api/auth/session`
+returns a nextauth session containing a bearer token:
+
+```
+token.accessToken      1156 chars
+token.tokenType        bearer
+token.expiresIn        599 seconds          ← ~10 minutes
+scope                  user:dj openid app:prostore
+session.expires        2026-10-14           ← ~1 month
+```
+
+**this corrects the earlier "grab a token by hand" plan.** a copied token dies
+in 10 minutes and a full pass takes ~72 (F8), so a manual token cannot cover
+even one run. but the *session cookie* lasts a month and the endpoint re-mints a
+fresh token on every call — verified by repeated calls across the capture.
+
+the session cookie is **httpOnly**, so it is not readable from page JavaScript
+(`document.cookie` shows only consent and analytics cookies). it must be
+exported from chrome's cookie store, the same way `youtube-cookies.txt` already
+is, and lives in `~/.config/musicpipeline/beatport-cookies.txt` — never the repo.
+
+**the auth design is therefore:** export the cookie once per month → call
+`/api/auth/session` to mint a bearer token → re-mint every ~8 minutes during a
+run. no `authorization_code` implementation, no runtime client_id discovery,
+no swagger-ui scraping. this is simpler *and* more durable than the
+`beets-beatport4` flow.
+
+**F12 — beatport returns the ISRC, so matches verify exactly.**
+`/v4/catalog/tracks/{id}/` includes an `isrc` field. comparing it to the ISRC we
+sent musicfetch turns F9's fuzzy-match worry into a cheap exact check:
+
+```
+17 beatport ids from the musicfetch sample
+16/17 ISRC exact match
+ 1/17 mismatch — "MEDUZA & Khalid - Weekend"
+```
+
+the ~6% mismatch rate is real, and it is **detectable rather than silent**. G3
+is rewritten accordingly: compare ISRCs, and on mismatch discard the beatport
+record and fall back to apple. no artist/title/duration heuristics needed.
+
+**F13 — `sub_genre` is almost always null; `genre` is the field that matters.**
+
+```
+sub_genre populated:  1 of 17  (6%)  — only "Mainstage" → "Big Room"
+```
+
+**this corrects the original premise.** the plan assumed beatport sub-genres
+would supply a fine taxonomy; measured, they are absent for all but genuine
+electronic releases. beatport's top-level `genre` is still clearly better than
+apple's for DJ use:
+
+| beatport | apple, same tracks |
+|---|---|
+| `Hip-Hop` (7) · `Pop` (4) · `Dance / Pop` (2) · `Trap / Future Bass` (2) · `Mainstage` (1) · `R&B` (1) | `Hip-Hop/Rap` · `Pop` · `Dance` · `R&B/Soul` |
+
+`Mainstage` and `Trap / Future Bass` are distinctions apple collapses into
+`Dance`. so beatport stays the primary genre source — reading `sub_genre` when
+present and `genre` otherwise, rather than depending on `sub_genre`.
+
+**F14 — beatport supplies BPM and key for 100% of matches.**
+`bpm` and `key` were populated on **17 of 17** records (e.g. `125` / `Eb Minor`).
+these were not in the original field list and are the two fields a DJ library
+most wants. they are added to §7 as first-class outputs.
+
+`mix_name` is also populated and carries real signal — observed values include
+`Original Mix`, `Clean`, `Intro`, `feat. NAV`, and
+`Tall Boys 100-130 Transition`. it is the most likely explanation for the F12
+mismatch and is the key to OQ-3 (remix identity).
+
 **F8 — rate limits are gentler in practice than documented.**
 published Starter is 6 req/min ([musicfetch.io](https://musicfetch.io/) pricing,
 checked 2026-09-14). measured: **20 sequential requests at 1 req/s, all HTTP
@@ -139,8 +210,10 @@ Music.** all three misses were bollywood. subject to F9.
 ## 4. goals
 
 - every tagged field traces to a named source, recorded per track.
-- genre is beatport's sub-genre where a *verified* beatport match exists, and
-  the apple genre otherwise.
+- genre is beatport's, where a **ISRC-verified** beatport match exists (F12),
+  and the apple genre otherwise.
+- **BPM and key** are populated from beatport wherever a verified match exists
+  (F14) — not in the original ask, but free and DJ-critical.
 - **featured artists are distinguished from main artists** rather than flattened
   into one list (§6).
 - artwork is the largest apple master we are willing to embed (§11 OQ-1).
@@ -256,10 +329,12 @@ feature in the deck display. **needs a decision** (§12).
 | disc number | **itunes `discNumber`** (F3) | — | — |
 | release date | musicfetch `releaseDate` | itunes `releaseDate` | — |
 | year | derived from release date | — | — |
-| **genre** | **beatport sub-genre (verified)** | musicfetch `genres[0]` | existing tag |
+| **genre** | **beatport `sub_genre` if present, else `genre`** (F13) | musicfetch `genres[0]` | existing tag |
 | artwork | apple master at configured size (F5) | existing embedded art | — |
 | label | musicfetch `label` | — | — |
-| bpm / key | beatport | — | — |
+| bpm | **beatport `bpm`** (F14, 100% coverage) | — | — |
+| key | **beatport `key`** (F14, 100% coverage) | — | — |
+| mix name | beatport `mix_name` | filename bracket | — |
 | ISRC | the file's own tag | musicfetch `isrc` | — |
 
 ## 8. gates — a stage is not done until these pass
@@ -267,10 +342,10 @@ feature in the deck display. **needs a decision** (§12).
 - **G1 identity.** ≥95% of the 1,439 ISRC tracks resolve to a musicfetch result.
   measured baseline: 20/20.
 - **G2 completeness.** ≥98% of resolved tracks carry all eight required fields.
-- **G3 beatport agreement.** a beatport match is accepted only if artist and
-  normalised title agree and duration is within ±3s. below threshold the match
-  is **discarded and genre falls back to tier 1** (F9). agreement rate is
-  reported, never assumed.
+- **G3 beatport ISRC agreement.** a beatport record is accepted only when its
+  `isrc` equals the ISRC we looked up (F12). on mismatch the record is
+  **discarded and genre falls back to tier 1**. measured baseline: 16/17.
+  the mismatch rate is reported by `verify`, never assumed.
 - **G6 artist-credit agreement.** musicbrainz and the filename agree on the
   main/featured split for ≥95% of the 418 featured tracks. disagreements are
   queued for review, never auto-resolved.
@@ -318,7 +393,7 @@ src/music_metadata/
     musicfetch.py   # tier 1 — identity + service ids
     itunes.py       # tier 2 — track/disc number
     musicbrainz.py  # tier 2 — artist-credit roles (§6)
-    beatport.py     # tier 3 — genre, pluggable, failure-isolated
+    beatport.py     # tier 3 — genre/bpm/key, cookie auth (F11)
     ratelimit.py    # token bucket, 20/min (F8)
   credit.py         # §6 main vs featured split
   arbitrate.py      # §7 precedence
@@ -351,9 +426,8 @@ live APIs, marked and excluded from the default run.
   ~4.3 GB across the library and relies on undocumented substitution (F5); 4500²
   costs ~9.4 GB. rekordbox and serato display far smaller. **recommendation:
   3000², with 1400² as the no-rewrite fallback.** needs a decision.
-- **OQ-2 beatport auth.** confirm the `beets-beatport4` credential flow works
-  with the operator's account before tier 3 is scheduled. if it fails, tier 3 is
-  cut and genre is apple-only — the pipeline still ships.
+- ~~**OQ-2 beatport auth.**~~ **resolved by live capture** — F11. session-cookie
+  → token minting is verified working against the operator's account.
 - **OQ-4 tag shape for features.** option A (feature in title) or B (feature in
   artist) — see §6. **recommendation: A**, it sorts correctly in rekordbox and
   matches what itunes already does for most releases.
