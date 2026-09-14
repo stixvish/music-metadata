@@ -143,14 +143,54 @@ module so the web ui (`SPEC.md` §14) can capture the same messages. `S` catches
 the security footguns that matter here: `subprocess` without a list, `requests`
 without a timeout.
 
+## every file type gets a formatter
+
+ruff covers python only. nothing else may be left unformatted.
+
+| files | tool | notes |
+|---|---|---|
+| `*.py` | **ruff** (lint + format) | 2-space, 88 cols |
+| `*.toml` | **taplo** | `pyproject.toml`, `library.toml` |
+| `templates/*.html` | **djlint** | jinja-aware; a plain HTML formatter mangles `{% %}` |
+| `*.css` `*.js` `*.json` `*.md` | **prettier** | 2-space |
+
+```toml
+# taplo.toml
+[formatting]
+align_entries   = true
+indent_tables   = false
+reorder_keys    = false   # library.toml entry order is meaningful to read
+```
+
+`reorder_keys = false` matters: `library.toml` (`SPEC.md` §9b) is read by a human
+scanning for empty fields, and alphabetising `beatport` above `spotify` would
+fight that.
+
 **checks run in this order, and all must pass before a commit:**
 
 ```
 ruff format --check .
 ruff check .
+taplo fmt --check .
+djlint src/music_metadata/web/templates --check
+prettier --check "**/*.{css,js,json,md}"
 mypy src/
 pytest -q
 ```
+
+## vs code
+
+`.vscode/settings.json` and `.vscode/extensions.json` are committed, so the
+editor enforces the same rules as the gate above — **format on save, fix on
+save**, per-language formatters matching the table.
+
+required extensions (vs code prompts on first open):
+`charliermarsh.ruff` · `ms-python.python` · `ms-python.mypy-type-checker` ·
+`tamasfe.even-better-toml` · `monosans.djlint` · `esbenp.prettier-vscode`
+
+`extensions.json` also lists **unwanted** ones — `black-formatter`, `isort`,
+`flake8`. ruff replaces all three, and having both installed produces fights on
+save where the file changes twice and neither tool wins.
 
 **never silence a check to get to green.** no new `# noqa`, `# type: ignore`, or
 `@pytest.mark.skip` without a comment naming the reason and, where it is

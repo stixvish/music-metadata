@@ -1,0 +1,47 @@
+{
+  "editor.formatOnSave": true,
+  "editor.codeActionsOnSave": { "source.fixAll": "explicit" },
+  "files.trimTrailingWhitespace": true,
+  "files.insertFinalNewline": true,
+
+  "[python]": {
+    "editor.defaultFormatter": "charliermarsh.ruff",
+    "editor.tabSize": 2,
+    "editor.insertSpaces": true,
+    "editor.rulers": [88],
+    "editor.codeActionsOnSave": {
+      "source.fixAll.ruff": "explicit",
+      "source.organizeImports.ruff": "explicit"
+    }
+  },
+  "[toml]": {
+    "editor.defaultFormatter": "tamasfe.even-better-toml",
+    "editor.tabSize": 2
+  },
+  "[html][jinja-html]": {
+    "editor.defaultFormatter": "monosans.djlint",
+    "editor.tabSize": 2
+  },
+  "[javascript][css][json][jsonc][markdown]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+    "editor.tabSize": 2
+  },
+
+  "python.analysis.typeCheckingMode": "standard",
+  "mypy-type-checker.args": ["--strict"],
+  "ruff.nativeServer": "on",
+
+  "evenBetterToml.formatter.indentTables": false,
+  "evenBetterToml.formatter.alignEntries": true,
+  "evenBetterToml.schema.enabled": true,
+
+  "files.associations": { "*.toml": "toml", "**/templates/*.html": "jinja-html" },
+
+  "files.exclude": {
+    "**/__pycache__": true,
+    "**/.ruff_cache": true,
+    "**/.mypy_cache": true,
+    "**/.pytest_cache": true
+  },
+  "search.exclude": { "cache/**": true, "out/**": true }
+}
