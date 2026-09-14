@@ -1360,6 +1360,7 @@ src/music_metadata/
   artwork.py        # fetch + size policy (§11 OQ-1)
   tag.py            # ID3-on-AIFF writer, preserves foreign frames
   store.py          # sidecar cache (sqlite, shared with the web ui)
+                    # persists mb recording id + fingerprint for §15
   web/
     app.py          # fastapi — library, review, acquire, diff (§14)
     jobs.py         # background resolve/acquire with progress
@@ -1455,4 +1456,41 @@ of scope.
 
 **not in scope for v1:** playback, waveform display, crate or playlist
 management, editing audio. rekordbox and serato own those.
+
+## 15. future — contributing fingerprints to acoustid
+
+not v1 scope, recorded so the design does not foreclose it.
+
+once the library is correctly tagged, it becomes a **credible source of
+fingerprint → metadata mappings** for the acoustid commons. `fpcalc`
+(chromaprint) is already installed and produced a valid fingerprint on the first
+try during the F19 probe, and chromaprint is robust to transcoding, so the
+AAC-sourced AIFFs are acceptable input.
+
+**what a submission needs** ([acoustid.org/webservice](https://acoustid.org/webservice),
+checked 2026-09-14): an application API key plus a user API key. the MusicBrainz
+recording id is **optional** — textual metadata (track title and artist, album
+title and artist, year, track and disc number) is accepted instead — but the
+docs are blunt that a fingerprint with no metadata "is not very useful".
+
+**the tension worth naming now.** the tracks most *worth* contributing are the
+ones acoustid and musicbrainz do not already have — and those are largely the
+same regional recordings musicbrainz returned `Not Found` for (F30/F31:
+`Kamariya`, `Desperado`). for exactly those we have **no MBID to submit**, only
+textual metadata. so:
+
+- **~93% of the library** (F30) can be submitted with a recording id — accurate,
+  but mostly duplicating mappings that already exist.
+- **the ~7% that would genuinely add coverage** can only carry textual metadata,
+  unless the operator first creates the musicbrainz recordings themselves. that
+  is the higher-value contribution and the larger undertaking.
+
+**what v1 should do to keep this cheap later:** persist the musicbrainz recording
+id in the sidecar alongside the ISRC whenever one is resolved, and keep the
+chromaprint fingerprint if it is ever computed. both are small columns, and
+without them a future submission pass would have to re-resolve the whole library.
+
+**precondition, not a detail:** submitting wrong mappings actively damages a
+shared database. a submission pass must run only over tracks that passed every
+gate in §8, never over flagged or fallback-resolved ones.
 
