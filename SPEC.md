@@ -1255,13 +1255,37 @@ string all change with that choice.
 ```
 candidates = spotify /v1/search?q=isrc:{ISRC}&type=track
 rank by (album_type: album=0, single=1, compilation=2),
-        then total_tracks DESC,
-        then release_date ASC
+        then total_tracks == 1 LAST,      # promo singles
+        then release_date ASC             # earliest real release
 pick the first
 ```
 
-**`total_tracks` descending is load-bearing, not cosmetic.** an earlier revision
-ranked by release date alone and picked the wrong release for `Kamariya`:
+**three clauses, each earning its place.**
+
+1. **type first.** an album beats a single beats a compilation. this is what
+   picks `No Strings Attached` (1/12) over the `Bye Bye Bye` single (1/1).
+2. **1-track releases sort last.** a 1-track release is a promo, not a home. this
+   is what picks the 4-track soundtrack `Stree` over the 1-track
+   `Kamariya (From "Stree")` — and it is why `(From "…")` never reaches a tag.
+3. **then earliest.** among real releases of the same type, the first one is the
+   canonical one.
+
+**why not "most tracks"?** an earlier revision ranked by `total_tracks`
+descending, which fixed `Kamariya` and **broke deluxe editions**:
+
+```
+NAV - Never Sleep (USUM72214489)
+  single  2022-07-29  1/1   Never Sleep                                ← promo
+  album   2022-09-09  4/19  Demons Protected By Angels                 ← correct
+  album   2022-09-14  4/20  Demons Protected By Angels (Bonus Version) ← "most tracks" picked this
+```
+
+a bonus or deluxe edition always has more tracks than the standard album, so
+"most tracks" systematically prefers the variant. "1-track last, then earliest"
+gets both cases right.
+
+**the promo-single clause is load-bearing.** ranking by release date alone picks
+the wrong release for `Kamariya`:
 
 ```
 [single] 2018-08-09  1/1  Kamariya (From "Stree")  | Kamariya (From "Stree")   ← earliest, WRONG
@@ -1269,13 +1293,22 @@ ranked by release date alone and picked the wrong release for `Kamariya`:
 ```
 
 a **1-track single is a promotional release**; the parent album or soundtrack is
-the recording's real home, and it is frequently published *later*. ranking on
-track count finds the parent; ranking on date finds the promo.
+the recording's real home, and it is frequently published *later*. demoting
+1-track releases finds the parent; ranking on date alone finds the promo.
+
+**this is also the answer to "single first, album later".** the single is
+released ahead of the album by design — weeks or months. year and release date
+come from the **earliest** release across all of them (F33), so the single's date
+is still what lands in `TDRC`; only `album`, `track` and `disc` come from the
+album. `Never Sleep` is tagged **2022-07-29** (the single) on
+**`Demons Protected By Angels` 4/19** (the album). both facts are true and both
+are kept.
 
 verified against every case probed for this spec:
 
 | ISRC | chosen release | title |
 |---|---|---|
+| `USUM72214489` | `Demons Protected By Angels` (album, 4/19) | standard, not the bonus edition |
 | `INS181801821` | `Stree` (single, 2/4) | `Kamariya` — clean |
 | `INS181700238` | `Badrinath Ki Dulhania` (single, 2/5) | `Roke Na Ruke Naina` — clean |
 | `USJI10000001` | `No Strings Attached` (album, 1/12) | `Bye Bye Bye` |
