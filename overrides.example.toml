@@ -1,39 +1,45 @@
 # overrides.toml — operator-supplied ground truth.
 #
-# this file is INPUT, not cache. `music-metadata cache --clear` never touches it.
-# anything here outranks every automated source, and is recorded in provenance
-# as `manual` so `verify` can show you what you asserted by hand.
-#
+# INPUT, not cache. `cache --clear` never touches this file.
 # lives at ~/.config/musicpipeline/overrides.toml
-# the web ui (§14) writes to this same file, so hand-editing and the ui agree.
+#
+# KEYED BY AUDIO MD5, never by ISRC. an ISRC is not unique across files —
+# two different songs in this library both claim INS181600966 — so an
+# ISRC-keyed entry would be ambiguous about which file it meant.
+# the md5 is of the decoded audio stream, so it survives renames and retagging.
+#
+# you do not write these by hand from scratch. generate stubs with:
+#   music-metadata map --missing beatport --stubs >> overrides.toml
+#   music-metadata map --untrusted --stubs   >> overrides.toml
+# then fill in the values. the `file =` line is written for you so the entry
+# is readable; it is documentation, not the key.
 
-# --- keyed by ISRC (preferred) --------------------------------------------
+# --- supply a source, and it wins -----------------------------------------
+# no need to declare the existing ISRC wrong. providing a source IS the
+# correction: its ISRC supersedes whatever the file's tag claims.
 
-["GBARL2501127"]
-# musicfetch returned no beatport link for this remix (F23). found by hand.
-beatport = "https://www.beatport.com/track/blessings/23984398"
-note     = "odd mob remix; musicfetch had no link"
-
-["INS181600966"]
-# this ISRC is wrong for the file — it belongs to a different song (F39 class C).
-# clearing it sends the track through tier-0 identity instead.
-isrc   = false
-note   = "wrong isrc: belongs to 'Sau Tarah Ke', not this track"
-
-["USUYG1791764"]
-# the extended mix inherited the radio edit's ISRC.
+["fe6d0c18b9ef14ba0d8e1b7a4c2f9301"]
+file    = "Vishal Dadlani & Benny Dayal - Jai Jai Shivshankar.aiff"
 spotify = "https://open.spotify.com/track/xxxxxxxxxxxxxxxxxxxxxx"
-note    = "extended mix; 248s not 174s"
+note    = "file's tag carried INS181600966, which belongs to 'Sau Tarah Ke'"
 
-# --- keyed by audio md5, for files with no usable ISRC ---------------------
+# --- pin a beatport listing the resolver could not find -------------------
 
-["md5:c11219b3517cef108338855825244d30"]
-# file: NAV - My Business (ft. Future).aiff
-appleMusic = "https://music.apple.com/us/album/x/1234567890?i=1234567891"
+["a3f19c7e4b2d8065fe1247ab39c05d8e"]
+file     = "Calvin Harris, Clementine Douglas & Odd Mob - Blessings [Odd Mob Remix].aiff"
+beatport = "https://www.beatport.com/track/blessings/23984398"
+note     = "musicfetch had no beatport link for this remix"
 
-# --- direct field overrides, when no source has it right -------------------
+# --- give an ISRC to a file that has none ---------------------------------
+# a spotify link is enough: external_ids.isrc comes back with it.
 
-["QM6N22551003"]
-genre        = "Melodic House & Techno"
-album_artist = "Emotional Oranges"
-note         = "beatport genre is wrong for this one"
+["7c4e19a05b83f2d6019e4caf85b3720d"]
+file    = "A$AP Rocky - Fuckin' Problems (ft. Drake, 2 Chainz & Kendrick Lamar).aiff"
+spotify = "https://open.spotify.com/track/xxxxxxxxxxxxxxxxxxxxxx"
+
+# --- direct field override, when no source has it right -------------------
+
+["b81f0a2c5d9e34761ac8205fe7d16943"]
+file  = "Emotional Oranges - Call It Off.aiff"
+genre = "Melodic House & Techno"
+note  = "beatport genre is wrong for this one"

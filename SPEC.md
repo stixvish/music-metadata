@@ -872,6 +872,34 @@ so the defences are not interchangeable:
 
 none of these five would be admitted, but only because of the metadata test.
 
+**F44 — an ISRC is not a unique key for a file.** measured in this library:
+
+```
+INS181600966   md5 95eff850…   Jonita Gandhi & Amit Mishra - Sau Tarah Ke.aiff
+INS181600966   md5 fe6d0c18…   Vishal Dadlani & Benny Dayal - Jai Jai Shivshankar.aiff
+```
+
+two unrelated songs, one ISRC (F39 class C). **any override or correction keyed
+by ISRC is ambiguous** — it cannot express which of the two files it means. the
+decoded-audio md5 is unique per recording and stable across renaming and
+retagging, so it is the key for anything file-scoped (§9c).
+
+ISRC remains the key for *recording*-scoped cache rows (§9a), where the ambiguity
+does not arise: those describe the catalogue entry, not a file on disk.
+
+**F45 — a spotify track URL yields the ISRC directly, for free.**
+`GET /v1/tracks/{id}` returns `external_ids.isrc` alongside name, duration, album,
+track and disc number — everything §7b needs, in one unauthenticated-tier call:
+
+```
+external_ids  {'isrc': 'GBARL2501127'}
+album         Blessings - The Remixes (Part 2) | trk 4/6 | disc 1
+duration      189 s
+```
+
+this makes "paste a spotify link" a complete identity solution for a file with no
+ISRC (§9d), with **no musicfetch call and no fingerprinting**.
+
 **F8 — rate limits are gentler in practice than documented.**
 published Starter is 6 req/min ([musicfetch.io](https://musicfetch.io/) pricing,
 checked 2026-09-14). measured: **20 sequential requests at 1 req/s, all HTTP
@@ -1465,75 +1493,90 @@ seconds longer"** (F23).
 ## 9c. manual overrides — operator-supplied ground truth
 
 musicfetch missed the beatport link for **9 of 10** `Blessings` remixes (F23),
-and the one it supplied was wrong. the operator can often find the right link by
-hand in seconds. the pipeline must accept that and **never lose it**.
+and the one it supplied was wrong. the operator can often find the right link in
+seconds. the pipeline must accept that and **never lose it**.
 
 **overrides are input, not cache.** they live in
-`~/.config/musicpipeline/overrides.toml`, outside the sidecar database, because
-`cache --clear` must be a safe operation. a manual correction is the most
-expensive data in the system — it cost human attention — and it is the one thing
-a cache wipe must not destroy.
+`~/.config/musicpipeline/overrides.toml`, outside the sidecar, because
+`cache --clear` must be safe. a manual correction cost human attention; it is the
+one thing a cache wipe must not destroy.
 
-**format: TOML keyed by ISRC**, or by `md5:{audio_md5}` for files whose ISRC is
-absent or untrustworthy (G10). `overrides.example.toml` in the repo root is the
-worked reference.
+**keyed by audio md5, never by ISRC (F44).** an ISRC is not unique across files —
+`INS181600966` appears on two unrelated songs in this library — so an ISRC-keyed
+entry cannot say *which* file it means. the md5 is of the decoded audio stream, so
+it is unique per recording and survives both renaming and retagging.
+
+**supplying a source is the correction; there is no negative assertion.** an
+earlier draft used `isrc = false` to mark a bad ISRC. that was redundant: giving
+a spotify URL already supersedes whatever the tag claims, and **G10 already strips
+untrusted ISRCs automatically** by duration. the operator never writes "this is
+wrong" — only "this is right".
 
 ```toml
-["GBARL2501127"]
-beatport = "https://www.beatport.com/track/blessings/23984398"
-note     = "odd mob remix; musicfetch had no link"
-
-["INS181600966"]
-isrc = false          # clear a wrong ISRC → re-identify via tier 0
-note = "belongs to 'Sau Tarah Ke', not this track"
-
-["md5:c11219b3517cef108338855825244d30"]
-appleMusic = "https://music.apple.com/us/album/x/1234567890?i=1234567891"
-
-["QM6N22551003"]
-genre = "Melodic House & Techno"    # direct field override
+["fe6d0c18b9ef14ba0d8e1b7a4c2f9301"]
+file    = "Vishal Dadlani & Benny Dayal - Jai Jai Shivshankar.aiff"
+spotify = "https://open.spotify.com/track/xxxxxxxxxxxxxxxxxxxxxx"
+note    = "file's tag carried INS181600966, which belongs to 'Sau Tarah Ke'"
 ```
 
-three kinds of entry, all optional per key:
+- **`file`** — written by the generator, not read as the key. it exists so the
+  entry is legible; an md5 alone is not.
+- **`note`** — for the operator, and surfaced back: `verify` prints it beside the
+  field it affected, and the review queue (§14) shows it on the row. it is not
+  inert.
+- **a service URL** pins identity. **a bare field** (`genre`, `album_artist`) is
+  the final word when no source has it right.
 
-- **a service URL** — pins the identity on that service. the resolver extracts
-  the id and skips discovery for it entirely.
-- **`isrc = false`** — declares the file's own ISRC untrustworthy, routing it
-  through tier-0 identity (§10) instead of believing the tag.
-- **a bare field** (`genre`, `album_artist`, …) — the final word when no source
-  has it right.
-
-**precedence: manual outranks everything**, including beatport genre and the §7b
-release choice. provenance records the value as `manual`, so `verify` can list
-exactly what was asserted by hand rather than resolved.
-
-**verified but never overruled.** a pasted URL is fetched and checked — does the
-beatport track's ISRC match, is its duration within ±5s (F40)? a mismatch is
-**reported, not rejected**: the operator may be deliberately pinning the extended
-mix. the point is to tell them what they pinned, not to argue.
-
-**the ui and the file are the same thing.** every "accept / reject / edit" in the
-review queue (§14) writes a row here, and hand-edits are read back on the next
-run. one artefact, two ways in. it is plain text, so it diffs and can live in
-version control.
-
-## 9d. reading the equivalence map
-
-the map (§9b) lives in SQLite, which is not readable in a text editor, so
-`music-metadata map` exports it:
+**stubs are generated, not hand-written.** the operator edits values, never keys:
 
 ```
-music-metadata map                    # TSV to stdout
-music-metadata map --isrc GBARL2501127   # one track, all services
-music-metadata map --missing beatport    # tracks with no verified beatport id
-music-metadata map --format csv > map.csv
+music-metadata map --missing beatport --stubs >> overrides.toml
+music-metadata map --untrusted --stubs        >> overrides.toml
 ```
 
-`--missing` is the one that closes the loop: it produces exactly the worklist of
-tracks the operator would want to go find links for, with title, artist and
-duration to search by. paste the URLs into `overrides.toml`, re-run, and the
-resolver picks them up without a single re-fetch of anything already cached.
+each stub arrives pre-filled with md5, `file`, and the current resolved values as
+comments, so filling one in means pasting a URL.
 
+**precedence: manual outranks everything.** provenance records `manual`, so
+`verify` lists exactly what was asserted by hand. a pasted URL is fetched and
+checked — ISRC match, duration within ±5s (F40) — and a mismatch is **reported,
+not rejected**. the operator may be deliberately pinning the extended mix.
+
+**the ui and the file are one artefact.** every accept/reject/edit in the review
+queue writes a row here; hand-edits are read back next run. plain text, so it
+diffs and version-controls.
+
+## 9d. giving an ISRC to a file that has none
+
+the **55 no-ISRC files** (§2) and any file G10 has distrusted need identity from
+somewhere. the operator's route is the cheapest one available and needs no paid
+API:
+
+**paste a spotify track URL.** `GET /v1/tracks/{id}` returns everything tier 1
+needs in a single free call:
+
+```
+external_ids.isrc  GBARL2501127
+name               Blessings - Odd Mob Remix
+duration_ms        189000
+album              Blessings - The Remixes (Part 2) | trk 4/6 | disc 1
+```
+
+so a spotify URL **is** an ISRC, plus the chosen release for free. once it is in
+`overrides.toml` the track rejoins the normal §5 flow with no special casing, and
+**musicfetch is not involved at all** — consistent with F36/F37.
+
+```
+music-metadata map --no-isrc            # the worklist: title, artist, duration
+  → operator finds each on spotify, pastes URLs into overrides.toml
+music-metadata resolve                  # they resolve like any other track
+```
+
+**55 files is an afternoon, not a project**, and it is more accurate than
+fingerprinting because the operator confirms each match by ear and eye.
+chromaprint (§15) remains the bulk/automatic fallback for tier 0, where a human
+cannot review every download — but for the existing library, **manual spotify
+links are the primary path**.
 
 ## 10. acquisition — tier 0, a front-end not a second pipeline
 
