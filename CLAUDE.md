@@ -86,3 +86,15 @@ docs(spec): record beatport api host is not cloudflare-fronted
 - **no secrets in the repo, ever.** no cookie files, no tokens. runtime config
   lives in `~/.config/musicpipeline/`.
 - push back when an approach has a real problem; do not agree by default.
+
+## git identity
+
+- **never set `user.email` or `user.name` locally in this repo.** the global
+  config is already correct: `vishesh
+  <64042847+stixvish@users.noreply.github.com>`. a local override shadows it
+  silently and the mistake only surfaces at push time.
+- the account has **email privacy enabled** (`gh api user` returns
+  `"email": null`). pushing a commit authored from a real address is rejected
+  with `GH007: your push would publish a private email address`.
+- if a commit is ever authored wrongly, fix it **before pushing** — rewriting
+  published history is a different and worse problem.
