@@ -1072,6 +1072,9 @@ feature in the deck display. **needs a decision** (§12).
 
 ## 7. field precedence
 
+**`overrides.toml` (§9c) outranks every row in this table.** where the operator
+has asserted a value by hand, no source is consulted for that field.
+
 | field | 1st | 2nd | 3rd |
 |---|---|---|---|
 | title | **itunes `trackName`** (parsed, §7a) | spotify | filename parse |
@@ -1459,6 +1462,79 @@ this track", including the honest answer **"a different recording that is 83
 seconds longer"** (F23).
 
 
+## 9c. manual overrides — operator-supplied ground truth
+
+musicfetch missed the beatport link for **9 of 10** `Blessings` remixes (F23),
+and the one it supplied was wrong. the operator can often find the right link by
+hand in seconds. the pipeline must accept that and **never lose it**.
+
+**overrides are input, not cache.** they live in
+`~/.config/musicpipeline/overrides.toml`, outside the sidecar database, because
+`cache --clear` must be a safe operation. a manual correction is the most
+expensive data in the system — it cost human attention — and it is the one thing
+a cache wipe must not destroy.
+
+**format: TOML keyed by ISRC**, or by `md5:{audio_md5}` for files whose ISRC is
+absent or untrustworthy (G10). `overrides.example.toml` in the repo root is the
+worked reference.
+
+```toml
+["GBARL2501127"]
+beatport = "https://www.beatport.com/track/blessings/23984398"
+note     = "odd mob remix; musicfetch had no link"
+
+["INS181600966"]
+isrc = false          # clear a wrong ISRC → re-identify via tier 0
+note = "belongs to 'Sau Tarah Ke', not this track"
+
+["md5:c11219b3517cef108338855825244d30"]
+appleMusic = "https://music.apple.com/us/album/x/1234567890?i=1234567891"
+
+["QM6N22551003"]
+genre = "Melodic House & Techno"    # direct field override
+```
+
+three kinds of entry, all optional per key:
+
+- **a service URL** — pins the identity on that service. the resolver extracts
+  the id and skips discovery for it entirely.
+- **`isrc = false`** — declares the file's own ISRC untrustworthy, routing it
+  through tier-0 identity (§10) instead of believing the tag.
+- **a bare field** (`genre`, `album_artist`, …) — the final word when no source
+  has it right.
+
+**precedence: manual outranks everything**, including beatport genre and the §7b
+release choice. provenance records the value as `manual`, so `verify` can list
+exactly what was asserted by hand rather than resolved.
+
+**verified but never overruled.** a pasted URL is fetched and checked — does the
+beatport track's ISRC match, is its duration within ±5s (F40)? a mismatch is
+**reported, not rejected**: the operator may be deliberately pinning the extended
+mix. the point is to tell them what they pinned, not to argue.
+
+**the ui and the file are the same thing.** every "accept / reject / edit" in the
+review queue (§14) writes a row here, and hand-edits are read back on the next
+run. one artefact, two ways in. it is plain text, so it diffs and can live in
+version control.
+
+## 9d. reading the equivalence map
+
+the map (§9b) lives in SQLite, which is not readable in a text editor, so
+`music-metadata map` exports it:
+
+```
+music-metadata map                    # TSV to stdout
+music-metadata map --isrc GBARL2501127   # one track, all services
+music-metadata map --missing beatport    # tracks with no verified beatport id
+music-metadata map --format csv > map.csv
+```
+
+`--missing` is the one that closes the loop: it produces exactly the worklist of
+tracks the operator would want to go find links for, with title, artist and
+duration to search by. paste the URLs into `overrides.toml`, re-run, and the
+resolver picks them up without a single re-fetch of anything already cached.
+
+
 ## 10. acquisition — tier 0, a front-end not a second pipeline
 
 the operator wants to keep adding tracks from youtube music rather than buying
@@ -1606,6 +1682,7 @@ src/music_metadata/
   arbitrate.py      # §7 precedence
   artwork.py        # fetch + size policy (§11 OQ-1)
   tag.py            # ID3-on-AIFF writer, preserves foreign frames
+  overrides.py      # operator ground truth, toml (§9c)
   store.py          # sidecar cache (sqlite, shared with the web ui)
                     # persists mb recording id + fingerprint for §15
   web/
