@@ -13,9 +13,11 @@ pre-commit:
       run: uv run djlint src/music_metadata/web/templates --check
     5_prettier:
       run: prettier --check "**/*.{css,js,json,md}"
-    6_mypy:
+    6_markdownlint:
+      run: markdownlint-cli2
+    7_mypy:
       run: uv run mypy
-    7_pytest:
+    8_pytest:
       run: uv run pytest -q
 
 pre-push:

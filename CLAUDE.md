@@ -67,7 +67,7 @@ the rules:
   `main` reads as one entry per milestone. the pr description carries the
   detail: what changed, why, and what was verified.
 
-```
+```text
 feat(sources): add musicbrainz artist-credit lookup
 fix(tag): preserve serato geob frames on rewrite
 docs(spec): record beatport api host is not cloudflare-fronted
@@ -171,7 +171,8 @@ ruff covers python only. nothing else may be left unformatted.
 | `*.py`                         | **ruff** (lint + format) | 2-space, 88 cols                                    |
 | `*.toml`                       | **taplo**                | `pyproject.toml`, `library.toml`                    |
 | `templates/*.html`             | **djlint**               | jinja-aware; a plain HTML formatter mangles `{% %}` |
-| `*.css` `*.js` `*.json` `*.md` | **prettier**             | 2-space                                             |
+| `*.css` `*.js` `*.json` `*.md` | **prettier**             | 2-space; the formatter                              |
+| `*.md`                         | **markdownlint-cli2**    | the linter. prettier formats, markdownlint checks   |
 
 ```toml
 # taplo.toml
@@ -185,14 +186,30 @@ reorder_keys    = false   # library.toml entry order is meaningful to read
 scanning for empty fields, and alphabetising `beatport` above `spotify` would
 fight that.
 
+**markdown gets a linter, not just a formatter.** prettier decides how markdown
+is _shaped_; markdownlint decides whether it is _well-formed_ — a code fence
+with no language, a heading level skipped, a space inside a code span. the two
+have overlapping opinions, so `.markdownlint-cli2.jsonc` **disables every rule
+prettier owns** (`MD049` emphasis style, `MD050` strong style, `MD034` bare
+URLs). without that they fight on every save and neither wins.
+
+`MD013` is set to **88 to match ruff**, with tables, code blocks and headings
+exempt — their width is content, not wrapping.
+
+**one conflict is real and the fix is ours, not the tools'.** prettier will
+re-join a prose line you broke before a token like `200.`, because a line
+starting with a number and a period is an ordered-list item in markdown. break
+the line somewhere else; do not add an override.
+
 **checks run in this order, and all must pass before a commit:**
 
-```
+```sh
 ruff format --check .
 ruff check .
 taplo fmt --check .
 djlint src/music_metadata/web/templates --check
 prettier --check "**/*.{css,js,json,md}"
+markdownlint-cli2
 mypy src/
 pytest -q
 ```
