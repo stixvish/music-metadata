@@ -1789,7 +1789,8 @@ src/music_metadata/
   web/
     app.py          # fastapi — library, review, acquire, diff (§14)
     jobs.py         # background resolve/acquire with progress
-    static/         # single-page frontend
+    templates/      # jinja2 + htmx fragments
+    static/         # hand-written css, alpine.js
 tests/{unit,integration}/
 ```
 
@@ -1885,11 +1886,43 @@ queue.
 4. **diff / apply** — the proposed change set for a batch, reviewable in the
    browser, with `apply` gated behind an explicit confirmation.
 
-**architecture.** fastapi serving a small single-page frontend; the sidecar
-SQLite database (§9) is the shared state between CLI and UI, so neither is
-authoritative over the other. long operations (`resolve`, `acquire`) run as
-background jobs with progress polled from the job table — a 72-minute resolve
-(F8) cannot block an HTTP request.
+**stack: fastapi + jinja2 + htmx. no node, no build step, no javascript
+framework.**
+
+the honest reason is what this ui actually does: **tables, filters, a paste-a-URL
+form, accept/reject buttons, and progress polling.** every one of those is a
+single htmx attribute against an endpoint that returns an HTML fragment:
+
+```html
+<!-- the review queue, filtered server-side -->
+<input name="q" hx-get="/review" hx-target="#rows" hx-trigger="keyup changed delay:300ms">
+
+<!-- accept a proposed value; writes library.toml (§9b) -->
+<button hx-post="/review/{md5}/accept" hx-target="closest tr" hx-swap="outerHTML">accept</button>
+
+<!-- a 72-minute resolve, without holding an http request open -->
+<div hx-get="/jobs/{id}" hx-trigger="every 2s" hx-swap="innerHTML"></div>
+```
+
+**what react or svelte would add here: a node toolchain, a build step, a second
+language, a second linter, and a client-side copy of state that the server
+already holds.** what it would buy: nothing this ui needs. the data lives in
+sqlite next to the server; there is no offline mode, no optimistic updating, no
+shared multi-user state to reconcile.
+
+**`alpine.js` from a CDN for local-only interactivity** — a disclosure toggle, a
+modal — where htmx would need a server round-trip for something that never leaves
+the page. it is ~15 KB and needs no build.
+
+templates are jinja2 under `web/templates/`, linted with **djlint** (a plain HTML
+formatter mangles `{% %}`); css is hand-written and formatted with prettier
+(`CLAUDE.md`).
+
+**shared state, not a wrapper.** the sidecar sqlite (§9a) and `library.toml`
+(§9b) are the state; the CLI and the ui are two front doors to the same data, and
+neither is authoritative. long operations (`resolve`, `acquire`) run as background
+jobs with progress polled from the `jobs` table — a 72-minute resolve (F8) cannot
+block an HTTP request.
 
 **local-first.** binds to localhost, no auth, no multi-user. it reads and writes
 the operator's own library on the operator's own machine; anything else is out
