@@ -8,7 +8,7 @@ every milestone is one branch and one pr (`CLAUDE.md`). checkpoints are human
 review gates: stop, report real numbers, wait.
 
 **standing rule, every milestone: `README.md` is updated in the same pr.** it
-states what exists and runs *today* — never what is planned. a milestone is not
+states what exists and runs _today_ — never what is planned. a milestone is not
 done until the README matches it. this is the last task in each list below and
 it is not optional.
 
@@ -120,7 +120,9 @@ works end to end.**
       **verify:** every command shown is copy-pasteable and works today.
 
 > ### checkpoint 1 — stop and review
+>
 > 20 tracks resolved, diffed, applied to an output tree.
+>
 > - **G4 asserted by checksum:** `~/Music/library` is byte-identical before and
 >   after. not inspected — asserted.
 > - show the full diff for `*NSYNC - Bye Bye Bye` and confirm it matches §5a's
@@ -168,6 +170,7 @@ branch `feat/credit`
       sentence. record the **measured** G6 agreement rate from checkpoint 2.
 
 > ### checkpoint 2 — stop and review
+>
 > G6 measured across all 418 featured tracks. target ≥95% agreement, but
 > **report the real rate** — §6 says the disagreement rate is reported, not
 > assumed. review a sample of the disagreements in the browser.
@@ -210,6 +213,7 @@ branch `feat/artwork`
       that v1 needs **no musicfetch token** (F36/F37).
 
 > ### checkpoint 3 — stop and review
+>
 > G5 reported: count accepted per candidate tier, count flagged, measured
 > against §7c's 4/4-at-3000² baseline. confirm the ~3-4 GB output estimate holds
 > at library scale.
@@ -225,8 +229,7 @@ branch `feat/beatport`
       tokens); `OAuthClientProvider` reads `.env` when OQ-5 lands.
       **verify:** a token is minted and refreshed on expiry · a missing cookie
       degrades to "no beatport", never a crash.
-- [ ] **4.2 `sources/beatport.py`** — `?isrc=` as a fast path, then artist + name
-      + mix-name search. F22: ISRC succeeds on originals and **fails on all 9
+- [ ] **4.2 `sources/beatport.py`** — `?isrc=` as a fast path, then artist + name + mix-name search. F22: ISRC succeeds on originals and **fails on all 9
       `Blessings` remixes**.
       **verify:** an original resolves by ISRC · a remix resolves by search ·
       zero results is a normal outcome, not an error.
@@ -253,6 +256,7 @@ branch `feat/beatport`
       `TKEY` notation, and the **honest** BPM/key coverage from checkpoint 4.
 
 > ### checkpoint 4 — stop and review
+>
 > G3 class fractions reported (same-recording vs different-edit vs no match). a
 > beatport-disabled run completes. BPM and key coverage stated **honestly** per
 > §7e — good for dance, poor for hip-hop, near-zero for indian repertoire, and
@@ -291,6 +295,7 @@ branch `feat/verify`
       a clear statement that acquisition (§10) is not built yet.
 
 > ### checkpoint 5 — v1 complete
+>
 > full library tagged to an output tree. **every gate G1–G11 reported with real
 > numbers against its target.** review queue worked through in the browser.
 > `~/Music/library` byte-identical to where it started.

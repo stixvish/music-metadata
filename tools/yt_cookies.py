@@ -19,6 +19,7 @@ usage:
 """
 
 import argparse
+import contextlib
 import json
 import re
 import shutil
@@ -52,10 +53,8 @@ def list_profiles():
     name = "?"
     prefs = d / "Preferences"
     if prefs.is_file():
-      try:
+      with contextlib.suppress(json.JSONDecodeError, OSError):
         name = json.loads(prefs.read_text()).get("profile", {}).get("name", "?")
-      except (json.JSONDecodeError, OSError):
-        pass
     yield d.name, name, (d / "Cookies").is_file()
 
 
@@ -158,8 +157,10 @@ def cmd_check(args):
     print(f"PASS  premium audio available: itag {p['itag']} {p['codec']} {p['kbps']}k")
     return 0
 
-  print(f"FAIL  no premium audio. best offered: itag {best['itag']} "
-        f"{best['codec']} {best['kbps']}k")
+  print(
+    f"FAIL  no premium audio. best offered: itag {best['itag']} "
+    f"{best['codec']} {best['kbps']}k"
+  )
   if rotated:
     print("\ncause: cookies were rotated by youtube (SPEC.md F20).")
   print("\nfix: use a dedicated profile you never browse in —")
@@ -173,9 +174,20 @@ def cmd_export(args):
     return 2
   CONFIG_DIR.mkdir(parents=True, exist_ok=True)
   tmp = CONFIG_DIR / "youtube-cookies.txt.tmp"
-  r = run(["yt-dlp", "--cookies-from-browser", f"chrome:{args.source}",
-           "--cookies", str(tmp), "--skip-download", "--simulate",
-           "--socket-timeout", "30", PROBE_URL])
+  r = run(
+    [
+      "yt-dlp",
+      "--cookies-from-browser",
+      f"chrome:{args.source}",
+      "--cookies",
+      str(tmp),
+      "--skip-download",
+      "--simulate",
+      "--socket-timeout",
+      "30",
+      PROBE_URL,
+    ]
+  )
   if not tmp.is_file():
     print("FAIL  no cookies written")
     for ln in r.stderr.splitlines()[:5]:
@@ -184,8 +196,10 @@ def cmd_export(args):
   # only replace a working file once the new one verifies.
   formats, _ = probe(["--cookies", str(tmp)])
   if not any(f["itag"] in PREMIUM_ITAGS for f in formats):
-    print(f"FAIL  exported cookies do not grant premium audio; keeping existing "
-          f"{COOKIE_FILE.name}")
+    print(
+      f"FAIL  exported cookies do not grant premium audio; keeping existing "
+      f"{COOKIE_FILE.name}"
+    )
     tmp.unlink(missing_ok=True)
     return 1
   shutil.move(str(tmp), str(COOKIE_FILE))
@@ -195,8 +209,9 @@ def cmd_export(args):
 
 
 def main():
-  ap = argparse.ArgumentParser(description=__doc__,
-                               formatter_class=argparse.RawDescriptionHelpFormatter)
+  ap = argparse.ArgumentParser(
+    description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+  )
   sub = ap.add_subparsers(dest="cmd", required=True)
   sub.add_parser("profiles").set_defaults(fn=cmd_profiles)
   sub.add_parser("setup").set_defaults(fn=cmd_setup)

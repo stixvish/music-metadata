@@ -185,7 +185,7 @@ ISRC always equals the file's own**; adopting beatport's is a correctness
 failure, not a metadata improvement.
 
 §5 says tier 3 is the component most likely to break and the one nothing depends
-on. *test that claim:* a run with beatport disabled must complete, with genre
+on. _test that claim:_ a run with beatport disabled must complete, with genre
 falling back to discogs and then itunes.
 
 > **checkpoint 4.** G3 class fractions reported. a beatport-disabled run

@@ -2,7 +2,7 @@
 
 **status:** phase 0 research complete · all external claims probed live
 **last updated:** 2026-09-14
-**see also:** `CLAUDE.md` (how we work). this file is *what we are building*.
+**see also:** `CLAUDE.md` (how we work). this file is _what we are building_.
 
 ---
 
@@ -22,16 +22,16 @@ from the best available master).
 
 run `ffprobe` over the tree; these are counts, not guesses.
 
-| fact | value |
-|---|---|
-| `~/Music/library` | 1,494 AIFF, flat, `Artist - Title.aiff` |
-| carry ISRC (`TSRC`) | **1,439 — 96.3%** |
-| no ISRC | **55 — 3.7%** |
-| `~/Music/beatport` | 7 WAV, RIFF `INFO` tags only |
-| artwork embedded today | 1200×1200 MJPEG, `Cover (front)` |
+| fact                   | value                                   |
+| ---------------------- | --------------------------------------- |
+| `~/Music/library`      | 1,494 AIFF, flat, `Artist - Title.aiff` |
+| carry ISRC (`TSRC`)    | **1,439 — 96.3%**                       |
+| no ISRC                | **55 — 3.7%**                           |
+| `~/Music/beatport`     | 7 WAV, RIFF `INFO` tags only            |
+| artwork embedded today | 1200×1200 MJPEG, `Cover (front)`        |
 
 the no-ISRC tail skews bollywood/punjabi and remix edits — the population
-*least* likely to exist on beatport. it is deferred (§9), not solved by the
+_least_ likely to exist on beatport. it is deferred (§9), not solved by the
 beatport path.
 
 ## 3. verified findings (evidence base)
@@ -48,7 +48,7 @@ probed `api.musicfetch.io/isrc`. each service entry is exactly `{id, link}`:
 ```
 
 there is no per-service genre, artwork, or tracklist. **"beatport genre from
-musicfetch" is not achievable** — musicfetch supplies the beatport *track id*,
+musicfetch" is not achievable** — musicfetch supplies the beatport _track id_,
 and the genre requires a second fetch. this invalidates the original one-API
 design and is the reason §5 has three tiers instead of one.
 
@@ -73,20 +73,20 @@ F1 is the join key. this closes F3 at zero cost.
 **F5 — artwork: the real ceiling is 4500×4500, reached by URL substitution.**
 measured against the `mzstatic` base URL:
 
-| request | actual | bytes |
-|---|---|---|
-| `600x600bb.jpg` | 600² | 116 KB |
-| `1400x1400bb.jpg` | 1400² | 618 KB |
-| `3000x3000bb.jpg` | 3000² | 2.9 MB |
-| `5000x5000bb.jpg` | **clamps to 4500²** | 6.3 MB |
-| `100000x100000bb.jpg` | HTTP 400 | — |
+| request               | actual              | bytes  |
+| --------------------- | ------------------- | ------ |
+| `600x600bb.jpg`       | 600²                | 116 KB |
+| `1400x1400bb.jpg`     | 1400²               | 618 KB |
+| `3000x3000bb.jpg`     | 3000²               | 2.9 MB |
+| `5000x5000bb.jpg`     | **clamps to 4500²** | 6.3 MB |
+| `100000x100000bb.jpg` | HTTP 400            | —      |
 
 musicfetch hands over a **1400×1400** URL with no substitution required. note
 the itunes Lookup response carries only `artworkUrl30/60/100` — there is no
 `artworkUrl3000` field on this endpoint, so any size above 100 is obtained by
 rewriting the URL, which is undocumented and ToS-gray. see §11 OQ-1.
 
-**F6 — cloudflare fronts the *web* host only, not the API host.**
+**F6 — cloudflare fronts the _web_ host only, not the API host.**
 `GET beatport.com/track/…` → **HTTP 403**, `<title>Just a moment...</title>`.
 but `api.beatport.com` is a different origin and is **not** cloudflare-fronted:
 
@@ -131,7 +131,7 @@ session.expires        2026-10-14           ← ~1 month
 
 **this corrects the earlier "grab a token by hand" plan.** a copied token dies
 in 10 minutes and a full pass takes ~72 (F8), so a manual token cannot cover
-even one run. but the *session cookie* lasts a month and the endpoint re-mints a
+even one run. but the _session cookie_ lasts a month and the endpoint re-mints a
 fresh token on every call — verified by repeated calls across the capture.
 
 the session cookie is **httpOnly**, so it is not readable from page JavaScript
@@ -142,7 +142,7 @@ is, and lives in `~/.config/musicpipeline/beatport-cookies.txt` — never the re
 **the auth design is therefore:** export the cookie once per month → call
 `/api/auth/session` to mint a bearer token → re-mint every ~8 minutes during a
 run. no `authorization_code` implementation, no runtime client_id discovery,
-no swagger-ui scraping. this is simpler *and* more durable than the
+no swagger-ui scraping. this is simpler _and_ more durable than the
 `beets-beatport4` flow.
 
 **F12 — beatport returns the ISRC, so matches verify exactly.**
@@ -170,8 +170,8 @@ would supply a fine taxonomy; measured, they are absent for all but genuine
 electronic releases. beatport's top-level `genre` is still clearly better than
 apple's for DJ use:
 
-| beatport | apple, same tracks |
-|---|---|
+| beatport                                                                                               | apple, same tracks                           |
+| ------------------------------------------------------------------------------------------------------ | -------------------------------------------- |
 | `Hip-Hop` (7) · `Pop` (4) · `Dance / Pop` (2) · `Trap / Future Bass` (2) · `Mainstage` (1) · `R&B` (1) | `Hip-Hop/Rap` · `Pop` · `Dance` · `R&B/Soul` |
 
 `Mainstage` and `Trap / Future Bass` are distinctions apple collapses into
@@ -207,21 +207,21 @@ relationship, and that is a request the operator must make, not a technical step
 
 **the official token is materially better when it exists:**
 
-| | web-session token (F11) | official OAuth token |
-|---|---|---|
-| TTL | `expires_in: 599` (~10 min) | `expires_in: 36000` (**10 hours**) |
-| refresh | re-mint from cookie | `refresh_token` |
-| credential | month-long httpOnly cookie | client id + secret |
-| approval | none | account manager |
+|            | web-session token (F11)     | official OAuth token               |
+| ---------- | --------------------------- | ---------------------------------- |
+| TTL        | `expires_in: 599` (~10 min) | `expires_in: 36000` (**10 hours**) |
+| refresh    | re-mint from cookie         | `refresh_token`                    |
+| credential | month-long httpOnly cookie  | client id + secret                 |
+| approval   | none                        | account manager                    |
 
 a 10-hour token covers a full 72-minute pass outright.
 
-**but note what this does *not* change.** the token captured in F11 is a valid
+**but note what this does _not_ change.** the token captured in F11 is a valid
 bearer for `api.beatport.com` — it already returned `/v4/catalog/tracks/{id}/`
 successfully across 17 records. **we are not working around the official API; we
 are already calling it.** the endpoints, the fields, the ISRC verification and
 the genre data in F12–F14 are all the official API's, obtained with a token the
-official identity service issued. only the *acquisition* differs.
+official identity service issued. only the _acquisition_ differs.
 
 **design consequence: the token provider is pluggable, the rest of tier 3 is
 not.** two implementations against one interface:
@@ -236,7 +236,7 @@ endpoints, field mapping, ISRC gating and rate limiting are identical either
 way. **this unblocks tier 3 now and makes adopting official credentials a
 one-class swap**, so the build is never waiting on beatport's business process.
 
-**F16 — the library's ISRCs were *resolved*, not carried from source.**
+**F16 — the library's ISRCs were _resolved_, not carried from source.**
 `~/Music/.staging` holds **1,517 M4A** files named by youtube video id
 (`_026NPNnsnY.m4a`) with **no metadata at all** — sampled 11, zero carried a
 title tag; the only tags are `major_brand`, `encoder` and friends. the 1,494
@@ -278,7 +278,7 @@ this is the finding that makes acquisition cheap. feeding
 **no fingerprinting, no text search, no edition ambiguity.** `fpcalc`
 (chromaprint) and a text-search path were both probed and work, but neither is
 needed: text search on the itunes API returned three near-identical editions for
-one track — standard, deluxe, and *instrumental* — which is precisely the
+one track — standard, deluxe, and _instrumental_ — which is precisely the
 mis-selection `/url` avoids by resolving identity rather than guessing it.
 fingerprinting stays documented as the fallback for audio that `/url` cannot
 resolve.
@@ -332,7 +332,7 @@ risk. the operator has accepted this.
 
 **F21 — every remix carries its own ISRC.** confirmed against the 10 `Blessings`
 variants in the library: 10 distinct ISRCs → **10 distinct musicfetch results**,
-each naming its own remixer. remix identity is therefore *free* — it falls out of
+each naming its own remixer. remix identity is therefore _free_ — it falls out of
 the ISRC and needs no fuzzy title matching.
 
 ```
@@ -343,22 +343,22 @@ GBARL2501127  Blessings - Odd Mob Remix
 ```
 
 **F22 — beatport supports exact ISRC lookup, but the streaming and beatport
-releases carry *different* ISRCs.** `/v4/catalog/tracks/?isrc={ISRC}` does work
+releases carry _different_ ISRCs.** `/v4/catalog/tracks/?isrc={ISRC}` does work
 and returns `count: 1` on an exact hit. but matching the library against beatport
 this way returns **0 of 9** for the `Blessings` remixes, while matching on
 artist + mix name returns **9 of 9**:
 
-| remix | library ISRC | beatport ISRC |
-|---|---|---|
-| CamrinWatsin | `GBARL2501117` | `GBARL2501120` |
-| Malugi | `GBARL2501118` | `GBARL2501121` |
-| Airwolf Paradise | `GBARL2501119` | `GBARL2501122` |
+| remix                           | library ISRC   | beatport ISRC  |
+| ------------------------------- | -------------- | -------------- |
+| CamrinWatsin                    | `GBARL2501117` | `GBARL2501120` |
+| Malugi                          | `GBARL2501118` | `GBARL2501121` |
+| Airwolf Paradise                | `GBARL2501119` | `GBARL2501122` |
 | HUGEL, Adam Trigger & Casa Mata | `GBARL2501124` | `GBARL2501129` |
-| MistaJam | `GBARL2501125` | `GBARL2501130` |
-| Will Clarke | `GBARL2501126` | `GBARL2501131` |
-| Odd Mob | `GBARL2501127` | `GBARL2501132` |
-| Schak | `GBARL2501128` | `GBARL2501133` |
-| COASTR. | `GBARL2501139` | `GBARL2501140` |
+| MistaJam                        | `GBARL2501125` | `GBARL2501130` |
+| Will Clarke                     | `GBARL2501126` | `GBARL2501131` |
+| Odd Mob                         | `GBARL2501127` | `GBARL2501132` |
+| Schak                           | `GBARL2501128` | `GBARL2501133` |
+| COASTR.                         | `GBARL2501139` | `GBARL2501140` |
 
 **ISRC-only matching is therefore wrong for precisely the tracks that matter
 most** — dance remixes, where beatport is the only source with a useful genre.
@@ -368,15 +368,15 @@ mistake and is corrected here.
 **F23 — the two releases are different recordings, not duplicate registrations.**
 measured durations settle it:
 
-| remix | library | beatport | delta |
-|---|---|---|---|
-| Airwolf Paradise | 203s | 289s | +86s |
-| CamrinWatsin | 226s | 336s | +110s |
-| COASTR. | 223s | 330s | +107s |
-| Malugi | 161s | 241s | +80s |
-| MistaJam | 166s | 303s | +137s |
-| Odd Mob | 189s | 272s | +83s |
-| HUGEL, Adam Trigger & Casa Mata | 158s | 293s | +135s |
+| remix                           | library | beatport | delta |
+| ------------------------------- | ------- | -------- | ----- |
+| Airwolf Paradise                | 203s    | 289s     | +86s  |
+| CamrinWatsin                    | 226s    | 336s     | +110s |
+| COASTR.                         | 223s    | 330s     | +107s |
+| Malugi                          | 161s    | 241s     | +80s  |
+| MistaJam                        | 166s    | 303s     | +137s |
+| Odd Mob                         | 189s    | 272s     | +83s  |
+| HUGEL, Adam Trigger & Casa Mata | 158s    | 293s     | +135s |
 
 the library holds the **short streaming edits**; beatport holds the **extended
 versions**. the separate ISRCs are correct — these are genuinely different
@@ -444,7 +444,7 @@ and the original carries **no `TPE4`/`TIT3` at all** — correct. apple and spot
 instead use a `" - {X} Remix"` suffix on `name`, so their titles must be parsed
 into title + mix name before writing (§7a).
 
-**F26 — the `(From "…")` suffix is a *compilation* artefact, and spotify's ISRC
+**F26 — the `(From "…")` suffix is a _compilation_ artefact, and spotify's ISRC
 search exposes every release a recording appears on.**
 `GET /v1/search?q=isrc:{ISRC}&type=track` returns one entry per release. for
 `INS181700238` (Arijit Singh — Roke Na Ruke Naina) it returns **ten**:
@@ -459,7 +459,7 @@ search exposes every release a recording appears on.**
 **the movie soundtrack release carries the clean title; only the compilations
 add the `(From "…")` context** — they need it because the album gives no other
 clue. so the suffix is not a bollywood convention to strip, it is a signal that
-the *wrong release* was chosen. picking the right release removes it for free.
+the _wrong release_ was chosen. picking the right release removes it for free.
 
 **F27 — release preference: `album` > `single` > `compilation`, earliest first.**
 "earliest non-compilation" was the obvious rule and it is **wrong**: for
@@ -475,12 +475,12 @@ the album release is the better attribution:
 
 the type-ordered rule is correct on all four probes:
 
-| ISRC | chosen release | why |
-|---|---|---|
-| `USJI10000001` | `No Strings Attached` (album, 1/12) | album beats the 1/1 single |
-| `USUG12509635` | `ODYSSEY` (album, 7/19) | album beats same-day single |
-| `INS181700238` | `Badrinath Ki Dulhania` (single, 2/5) | no album exists; soundtrack wins, clean title |
-| `GBARL2501127` | `Blessings — The Remixes (Part 2)` (single, 4/6) | only release |
+| ISRC           | chosen release                                   | why                                           |
+| -------------- | ------------------------------------------------ | --------------------------------------------- |
+| `USJI10000001` | `No Strings Attached` (album, 1/12)              | album beats the 1/1 single                    |
+| `USUG12509635` | `ODYSSEY` (album, 7/19)                          | album beats same-day single                   |
+| `INS181700238` | `Badrinath Ki Dulhania` (single, 2/5)            | no album exists; soundtrack wins, clean title |
+| `GBARL2501127` | `Blessings — The Remixes (Part 2)` (single, 4/6) | only release                                  |
 
 this single policy fixes **album, album artist, track number, disc number and
 title cleanliness across the whole library** — it is not a bollywood special
@@ -520,7 +520,7 @@ and a link to the work; the work gives composer and lyricist:
    lyricist      : Mayur Puri                            ← not in spotify's list at all
 ```
 
-**two things fall out.** musicbrainz's `artist-credit` *already* excludes
+**two things fall out.** musicbrainz's `artist-credit` _already_ excludes
 composers, so it is the correct source for `artist` with no filtering needed —
 the same field that solves the featured-artist split in §6. and the work hop
 recovers a **lyricist spotify never reported**.
@@ -541,7 +541,7 @@ the credits panel in the spotify app (songwriters, producers, performed by) is
 "the artists who performed the track", with no role field and no writer or
 producer data ([developer.spotify.com, checked 2026-09-14](https://developer.spotify.com/documentation/web-api/reference/get-track)).
 
-what *is* usable is `track.name`, which carries the feature explicitly:
+what _is_ usable is `track.name`, which carries the feature explicitly:
 
 ```
 Sweet Nothing (feat. Florence Welch)   artists: ['Calvin Harris', 'Florence Welch']
@@ -602,7 +602,7 @@ since it is exactly where composers pollute `artists[]`. the affected tracks are
 **flagged for review rather than silently accepted** (G6).
 
 **F32 — musicfetch's `appleMusic.id` points at an arbitrary release, so track
-and disc numbers must come from the *chosen* release.** measured on
+and disc numbers must come from the _chosen_ release.** measured on
 `USJI10000001` (\*NSYNC — Bye Bye Bye):
 
 ```
@@ -615,7 +615,7 @@ musicfetch appleMusic.id  1741747057
 **`138/150` is what F4's design would have written.** the appleMusic id musicfetch
 returns is whichever release its matcher landed on, frequently a compilation —
 `Beach Beats` here, `Naacho Naacho - Party Songs` for `Kamariya`. iTunes has no
-ISRC search, so the *set* of apple releases cannot be enumerated to pick a better
+ISRC search, so the _set_ of apple releases cannot be enumerated to pick a better
 one.
 
 **spotify's track object carries both `track_number` and `disc_number`**, on the
@@ -631,12 +631,12 @@ this removes the last dependency on an unvetted release id.
 **F33 — release date: the recording's earliest, not the chosen album's.**
 these differ, and the difference is large enough to matter:
 
-| ISRC | chosen release | spotify earliest | itunes | musicbrainz |
-|---|---|---|---|---|
-| `USJI10000001` | 2000-03-21 | **2000-01-17** | 2000-01-11 | n/a |
-| `GBARL1201392` | 2012-10-29 | **2012-10-11** | 2012-10-11 | 2012-04-16 |
-| `INS181801821` | 2018-08-22 | **2018-08-09** | 2018-08-09 | n/a |
-| `USUG12509635` | 2026-02-05 | **2026-02-05** | 2026-02-06 | 2026-02-05 |
+| ISRC           | chosen release | spotify earliest | itunes     | musicbrainz |
+| -------------- | -------------- | ---------------- | ---------- | ----------- |
+| `USJI10000001` | 2000-03-21     | **2000-01-17**   | 2000-01-11 | n/a         |
+| `GBARL1201392` | 2012-10-29     | **2012-10-11**   | 2012-10-11 | 2012-04-16  |
+| `INS181801821` | 2018-08-22     | **2018-08-09**   | 2018-08-09 | n/a         |
+| `USUG12509635` | 2026-02-05     | **2026-02-05**   | 2026-02-06 | 2026-02-05  |
 
 per operator decision the tags split:
 
@@ -653,7 +653,7 @@ absent on 2 of 4 and returned **2012-04-16** for a track released in October
 2012, six months early. musicbrainz is therefore corroboration only, and a
 disagreement greater than 60 days is **flagged, not averaged**.
 
-**F34 — musicfetch's artwork is the artwork of *its* release, which is often a
+**F34 — musicfetch's artwork is the artwork of _its_ release, which is often a
 compilation.** for `USJI10000001` musicfetch returns a 1400×1400 image whose URL
 carries UPC `196872030730` — **`Beach Beats`**, a stock beach photograph. the
 correct `No Strings Attached` cover is UPC `012414170224`. verified by md5 and
@@ -685,7 +685,7 @@ artworkUrl100 → substitute 3000×3000 (F5)
 confirmed working end to end: the `No Strings Attached` URL upgrades to
 **3000×3000, 2.2 MB**.
 
-**F35 — itunes *search* does enumerate releases; only the lookup-by-id is
+**F35 — itunes _search_ does enumerate releases; only the lookup-by-id is
 single-release.** `GET /search?term=…&entity=song` returned **11 distinct
 releases** of `Bye Bye Bye`:
 
@@ -697,7 +697,7 @@ Greatest Hits                1/12   2000-01-11
 …plus workout compilations and a soundtrack
 ```
 
-so iTunes *can* be release-selected, by text rather than ISRC. the catch is that
+so iTunes _can_ be release-selected, by text rather than ISRC. the catch is that
 text search also returns **different recordings** — a
 `Bye Bye Bye (Rock) [feat. Cody Carson]` single and a `Lyle, Lyle, Crocodile`
 soundtrack entry appear in the same result set. spotify's `isrc:` search cannot
@@ -740,12 +740,12 @@ entity=song   term='Calvin Harris Sweet Nothing'  24 results, 2 album hits → c
 
 the two-entity chain reproduces musicfetch's results **byte for byte**:
 
-| ISRC | album | via | size |
-|---|---|---|---|
+| ISRC           | album               | via            | size    |
+| -------------- | ------------------- | -------------- | ------- |
 | `USJI10000001` | No Strings Attached | `entity=album` | 2256 KB |
-| `INS181801821` | Stree | `entity=album` | 1755 KB |
-| `GBARL1201392` | 18 Months | `entity=song` | 2162 KB |
-| `USUG12509635` | ODYSSEY | `entity=album` | 2919 KB |
+| `INS181801821` | Stree               | `entity=album` | 1755 KB |
+| `GBARL1201392` | 18 Months           | `entity=song`  | 2162 KB |
+| `USUG12509635` | ODYSSEY             | `entity=album` | 2919 KB |
 
 **musicfetch is therefore removed from tier 1 entirely** (operator decision). it
 remains **required for tier 0**, where `/url` is the only way to turn a youtube
@@ -768,8 +768,9 @@ singapore). the scope rule is therefore **either** signal, not both.
 **F39 — the library has 6 duplicate ISRCs in three distinct classes.** measured
 across all 1,494 files by ISRC and by audio-stream md5:
 
-**class A — true duplicates (3).** identical audio md5 *and* identical ISRC; the
+**class A — true duplicates (3).** identical audio md5 _and_ identical ISRC; the
 second copy carries a ` (2)` filename suffix:
+
 ```
 Tiësto - The Business / (2)              85b48197…  same bytes
 John Summit & Feid - CHICA 305 / (2)     635e4af1…  same bytes
@@ -777,6 +778,7 @@ NAV - My Business (ft. Future) / (2)     c11219b3…  same bytes
 ```
 
 **class B — same ISRC, genuinely different recordings (2).**
+
 ```
 Bebe Rexha - New Religion             174s   ← spotify says 174s  ✓
 Bebe Rexha - New Religion [Extended]  248s   ← wrong ISRC, inherited from the edit
@@ -784,6 +786,7 @@ Emotional Oranges - Call It Off / (ft. JAEHYUN)
 ```
 
 **class C — an ISRC on an entirely unrelated song (1).**
+
 ```
 INS181600966  spotify: 'Sau Tarah Ke', 238s
   Sau Tarah Ke.aiff          238s  ✓ correct
@@ -823,18 +826,18 @@ uploads carry `track`/`artist`/`album`, and music videos do not.**
 **F42 — complete tag inventory of the current library.** every key present
 across all 1,494 files:
 
-| field | count | coverage |
-|---|---|---|
-| `title` `genre` `date` `artist` | 1494 | 100% |
-| `disc` · `album` | 1491 | 99.8% |
-| `track` | 1490 | 99.7% |
-| `album_artist` | 1451 | 97.1% |
-| `TSRC` (ISRC) | 1439 | 96.3% |
-| `publisher` (label) | 1069 | 71.6% |
-| `TIT3` (mix name) | 99 | 6.6% |
-| `TPE4` (remixer) | 46 | 3.1% |
-| `TEXT` (lyricist) | 25 | 1.7% |
-| `composer` | 22 | 1.5% |
+| field                           | count | coverage |
+| ------------------------------- | ----- | -------- |
+| `title` `genre` `date` `artist` | 1494  | 100%     |
+| `disc` · `album`                | 1491  | 99.8%    |
+| `track`                         | 1490  | 99.7%    |
+| `album_artist`                  | 1451  | 97.1%    |
+| `TSRC` (ISRC)                   | 1439  | 96.3%    |
+| `publisher` (label)             | 1069  | 71.6%    |
+| `TIT3` (mix name)               | 99    | 6.6%     |
+| `TPE4` (remixer)                | 46    | 3.1%     |
+| `TEXT` (lyricist)               | 25    | 1.7%     |
+| `composer`                      | 22    | 1.5%     |
 
 fourteen fields, and the gaps say what this project adds: **no `TBPM`, no
 `TKEY`** anywhere (beatport supplies both at 100% of matches — F14), composer and
@@ -884,7 +887,7 @@ by ISRC is ambiguous** — it cannot express which of the two files it means. th
 decoded-audio md5 is unique per recording and stable across renaming and
 retagging, so it is the key for anything file-scoped (§9c).
 
-ISRC remains the key for *recording*-scoped cache rows (§9a), where the ambiguity
+ISRC remains the key for _recording_-scoped cache rows (§9a), where the ambiguity
 does not arise: those describe the catalogue entry, not a file on disk.
 
 **F45 — a spotify track URL yields the ISRC directly, for free.**
@@ -900,7 +903,7 @@ duration      189 s
 this makes "paste a spotify link" a complete identity solution for a file with no
 ISRC (§9d), with **no musicfetch call and no fingerprinting**.
 
-**F46 — label: spotify has no label field at all; discogs' *release* endpoint is
+**F46 — label: spotify has no label field at all; discogs' _release_ endpoint is
 the clean source.** measured across three tracks.
 
 **spotify does not expose it.** the full album object under client-credentials has
@@ -945,11 +948,11 @@ one worth reading. filter `labels[]` on `entity_type_name == "Label"`.
 
 **F47 — discogs `styles` is a better genre fallback than itunes.**
 
-| release | discogs style | discogs genre | itunes genre |
-|---|---|---|---|
-| Demons Protected By Angels | `Trap` | Hip Hop | Hip-Hop/Rap |
-| 18 Months | `House, Synth-pop, Electro` | Electronic | Dance |
-| Badrinath Ki Dulhania | `Bollywood, Soundtrack` | Stage & Screen | Bollywood |
+| release                    | discogs style               | discogs genre  | itunes genre |
+| -------------------------- | --------------------------- | -------------- | ------------ |
+| Demons Protected By Angels | `Trap`                      | Hip Hop        | Hip-Hop/Rap  |
+| 18 Months                  | `House, Synth-pop, Electro` | Electronic     | Dance        |
+| Badrinath Ki Dulhania      | `Bollywood, Soundtrack`     | Stage & Screen | Bollywood    |
 
 `House / Synth-pop / Electro` against itunes' flat `Dance` is the difference that
 matters for a DJ library. discogs slots **below beatport, above itunes** in the
@@ -982,16 +985,16 @@ if neither is offered rather than accepting 151k.
 same track, both premium formats downloaded and compared by band energy (RMS dB,
 both resampled to 48 kHz):
 
-| band (Hz) | AAC 141 | OPUS 774 | delta |
-|---|---|---|---|
-| 14000-16000 | -46.8 | -46.7 | +0.1 |
-| 16000-18000 | -48.9 | -48.7 | +0.2 |
-| 18000-19000 | -53.1 | -53.0 | +0.1 |
-| 19500-20000 | -57.0 | -57.5 | **-0.5** |
-| 20000-21000 | -57.0 | -58.7 | **-1.7** |
-| 21000-22000 | -61.4 | -66.0 | **-4.6** |
+| band (Hz)   | AAC 141 | OPUS 774 | delta    |
+| ----------- | ------- | -------- | -------- |
+| 14000-16000 | -46.8   | -46.7    | +0.1     |
+| 16000-18000 | -48.9   | -48.7    | +0.2     |
+| 18000-19000 | -53.1   | -53.0    | +0.1     |
+| 19500-20000 | -57.0   | -57.5    | **-0.5** |
+| 20000-21000 | -57.0   | -58.7    | **-1.7** |
+| 21000-22000 | -61.4   | -66.0    | **-4.6** |
 
-**opus has *less* high-frequency energy, not more.** and above AAC's 22.05 kHz
+**opus has _less_ high-frequency energy, not more.** and above AAC's 22.05 kHz
 nyquist — where opus at 48 kHz could hold content AAC physically cannot — there
 is nothing:
 
@@ -1020,8 +1023,8 @@ weight:
 `774` stays as the fallback in `-f 141/774` (F48): premium opus is far better
 than the 151k non-premium alternative if AAC is ever unavailable.
 
-*measured on one track. the finding is a decision input, not a claim about every
-encode on youtube.*
+_measured on one track. the finding is a decision input, not a claim about every
+encode on youtube._
 
 **F50 — AIFF cannot hold AAC; the conversion is a decode, not a remux.** this
 matters because it determines what the 5.4x storage cost is actually buying.
@@ -1070,7 +1073,7 @@ the limiter is a token bucket at 20/min, not 1/s. a full 1,439-track pass is
 then ~72 minutes, and resolution is cached so it is paid once.
 
 **F9 — non-spotify service links are search-derived, not ISRC-verified.**
-musicfetch documents that it resolves the ISRC on spotify, then *searches* other
+musicfetch documents that it resolves the ISRC on spotify, then _searches_ other
 services for matching tracks. the beatport link is therefore a fuzzy match and
 may point at a different mix of the same title. **beatport-sourced fields must
 be verified before they are trusted** (§7 G3), not written blind.
@@ -1129,16 +1132,20 @@ depends on.
 worked on `*NSYNC - Bye Bye Bye.aiff`, with the real values each call returned.
 
 **step 0 — read the file. no network.**
+
 ```
 ffprobe → TSRC = USJI10000001
 ```
+
 if there is no ISRC, the track goes to the tier-0 path (§10) instead.
 
-**step 1 — spotify, queried DIRECTLY by ISRC.** *(not via musicfetch)*
+**step 1 — spotify, queried DIRECTLY by ISRC.** _(not via musicfetch)_
+
 ```
 GET /v1/search?q=isrc:USJI10000001&type=track&limit=10
 → 10 releases
 ```
+
 rank them `album > single > compilation`, then `total_tracks` DESC, then
 `release_date` ASC (§7b). this yields two different things:
 
@@ -1152,6 +1159,7 @@ earliest date supplies `date`/`year` — these come from **different rows** of t
 same response (F33).
 
 **step 2 — musicbrainz, also queried directly by ISRC.**
+
 ```
 GET /ws/2/isrc/{ISRC}?inc=artist-credits+artist-rels+work-rels
 → artist-credit joinphrases  → main vs featured split (§6)
@@ -1159,18 +1167,22 @@ GET /ws/2/isrc/{ISRC}?inc=artist-credits+artist-rels+work-rels
 GET /ws/2/work/{id}?inc=artist-rels
 → composer, lyricist         → TCOM, TEXT
 ```
+
 on `Not Found`, fall back to the spotify/itunes `(feat. …)` title parse and flag
 the track. on `currently busy`, **retry** — that is not a miss (F30).
 
 **step 3 — beatport.** try `?isrc=` first; on zero results search by
 artist + name + mix name (F22). compare durations:
+
 ```
 within ±5s  → same recording → take genre, sub_genre, label, bpm, key, mix_name
 outside ±5s → different edit  → take genre, sub_genre, label ONLY (F23)
 ```
+
 zero results is normal; genre then falls back to itunes.
 
 **step 4 — artwork (§7c).** three candidates, all free, **no musicfetch** (F37):
+
 ```
 A  itunes /search?term='*NSYNC No Strings Attached'&entity=album
       here: 'No Strings Attached' == chosen album   → ACCEPT
@@ -1189,19 +1201,18 @@ input to everything else — the album name drives the artwork search, and the
 track/disc numbers come from that release rather than from any id another
 service hands over.
 
-
 ## 6. artist credit — the featured-artist problem
 
 **the complaint, quantified.** spotify (and therefore musicfetch's `artists[]`)
 flattens every contributor into one list with no role. measured on real tracks:
 
-| file | musicfetch `artists[]` | correct reading |
-|---|---|---|
+| file                                         | musicfetch `artists[]`           | correct reading                       |
+| -------------------------------------------- | -------------------------------- | ------------------------------------- |
 | `Arizona Zervas - OH MY LORD (ft. 24kGoldn)` | `['Arizona Zervas', '24kGoldn']` | main + **feature**, indistinguishable |
-| `Internet Money - Options (ft. 24kGoldn)` | `['Internet Money', '24kGoldn']` | main + **feature**, indistinguishable |
+| `Internet Money - Options (ft. 24kGoldn)`    | `['Internet Money', '24kGoldn']` | main + **feature**, indistinguishable |
 
 **418 of 1,494 files (28%)** encode a feature in the filename, and 196 more
-carry multiple *main* artists. this is not an edge case.
+carry multiple _main_ artists. this is not an edge case.
 
 **musicbrainz solves it structurally.** its `artist-credit` array carries an
 explicit `joinphrase` per element, so the boundary is machine-readable rather
@@ -1220,13 +1231,13 @@ title, no guessing.
 **itunes is not reliable for this** — it is inconsistent about where the feature
 lives:
 
-| track | `artistName` | `trackName` |
-|---|---|---|
-| Dua Lipa - Levitating | `Dua Lipa` | `Levitating (feat. DaBaby)` — in the title |
-| Arizona Zervas - OH MY LORD | `Arizona Zervas & 24kGoldn` — flattened | `OH MY LORD` |
+| track                       | `artistName`                            | `trackName`                                |
+| --------------------------- | --------------------------------------- | ------------------------------------------ |
+| Dua Lipa - Levitating       | `Dua Lipa`                              | `Levitating (feat. DaBaby)` — in the title |
+| Arizona Zervas - OH MY LORD | `Arizona Zervas & 24kGoldn` — flattened | `OH MY LORD`                               |
 
 both shapes occur, so itunes alone cannot be trusted to separate the roles. it
-is still useful as *corroboration* when the feature appears in `trackName`.
+is still useful as _corroboration_ when the feature appears in `trackName`.
 
 **resolution order for artist credit:**
 
@@ -1247,41 +1258,40 @@ assumed.
 
 **OQ-4 — tag shape. decided: option A, the feature lives in the title.**
 
-| option | `artist` | `title` | `album artist` |
-|---|---|---|---|
-| **A — feature in title** ← | `Dua Lipa` | `Levitating (feat. DaBaby)` | `Dua Lipa` |
-| B — feature in artist | `Dua Lipa ft. DaBaby` | `Levitating` | `Dua Lipa` |
+| option                     | `artist`              | `title`                     | `album artist` |
+| -------------------------- | --------------------- | --------------------------- | -------------- |
+| **A — feature in title** ← | `Dua Lipa`            | `Levitating (feat. DaBaby)` | `Dua Lipa`     |
+| B — feature in artist      | `Dua Lipa ft. DaBaby` | `Levitating`                | `Dua Lipa`     |
 
 A keeps artist columns clean and sorts correctly in rekordbox; B surfaces the
 feature in the deck display. the sorting argument won. the full shape is
 specified in §7a — `{Name} (ft. {Features}) [{Mix}]`.
-
 
 ## 7. field precedence
 
 **a hand-edited value in `library.toml` (§9b) outranks every row in this table.**
 where the operator has asserted a value, no source is consulted for that field.
 
-| field | 1st | 2nd | 3rd |
-|---|---|---|---|
-| title | **itunes `trackName`** (parsed, §7a) | spotify | filename parse |
-| artist | **musicbrainz artist-credit** — performers-only filter **in indian scope only** (§6, §7a, F38) | filename parse | itunes `artistName` |
-| album | **itunes `collectionName`** | spotify | — |
-| album artist | **main artists only** (§6, §7a) | itunes `artistName` | artist |
-| track number | **spotify chosen release `track_number`** (F32) | itunes (unvetted release) | — |
-| disc number | **spotify chosen release `disc_number`** (F32) | itunes (unvetted release) | — |
-| release date | **spotify MIN across all releases** (F33) | itunes | musicbrainz `first-release-date` |
-| year | derived from release date | — | — |
-| **genre** | **beatport `sub_genre` if present, else `genre`** — wherever a beatport listing exists, regardless of style (operator decision) | **discogs `styles[0]`** (F47) | itunes `primaryGenreName`, then existing tag |
-| artwork | **verified chain §7c** → 3000² | spotify album image (~640px) | existing embedded art (flagged) |
-| label | **beatport `release.label`** (operator preference) | discogs `/releases/{id}` `labels[]` (F46) | itunes/spotify `copyright` — parsed, last resort |
-| bpm | **beatport `bpm`** (F14, 100% coverage) | — | — |
-| key | **beatport `key`** (F14, 100% coverage) | — | — |
-| mix name (`TIT3`) | beatport `mix_name` (F24) | parsed from itunes title | filename bracket |
-| remixer (`TPE4`) | beatport `remixers` (F24) | parsed from mix name | — |
-| ISRC | the file's own tag | musicfetch `isrc` | — |
-| composer (`TCOM`) | musicbrainz work → composer (F28) | — | — |
-| lyricist (`TEXT`) | musicbrainz work → lyricist (F28) | — | — |
+| field             | 1st                                                                                                                             | 2nd                                       | 3rd                                              |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------- | ------------------------------------------------ |
+| title             | **itunes `trackName`** (parsed, §7a)                                                                                            | spotify                                   | filename parse                                   |
+| artist            | **musicbrainz artist-credit** — performers-only filter **in indian scope only** (§6, §7a, F38)                                  | filename parse                            | itunes `artistName`                              |
+| album             | **itunes `collectionName`**                                                                                                     | spotify                                   | —                                                |
+| album artist      | **main artists only** (§6, §7a)                                                                                                 | itunes `artistName`                       | artist                                           |
+| track number      | **spotify chosen release `track_number`** (F32)                                                                                 | itunes (unvetted release)                 | —                                                |
+| disc number       | **spotify chosen release `disc_number`** (F32)                                                                                  | itunes (unvetted release)                 | —                                                |
+| release date      | **spotify MIN across all releases** (F33)                                                                                       | itunes                                    | musicbrainz `first-release-date`                 |
+| year              | derived from release date                                                                                                       | —                                         | —                                                |
+| **genre**         | **beatport `sub_genre` if present, else `genre`** — wherever a beatport listing exists, regardless of style (operator decision) | **discogs `styles[0]`** (F47)             | itunes `primaryGenreName`, then existing tag     |
+| artwork           | **verified chain §7c** → 3000²                                                                                                  | spotify album image (~640px)              | existing embedded art (flagged)                  |
+| label             | **beatport `release.label`** (operator preference)                                                                              | discogs `/releases/{id}` `labels[]` (F46) | itunes/spotify `copyright` — parsed, last resort |
+| bpm               | **beatport `bpm`** (F14, 100% coverage)                                                                                         | —                                         | —                                                |
+| key               | **beatport `key`** (F14, 100% coverage)                                                                                         | —                                         | —                                                |
+| mix name (`TIT3`) | beatport `mix_name` (F24)                                                                                                       | parsed from itunes title                  | filename bracket                                 |
+| remixer (`TPE4`)  | beatport `remixers` (F24)                                                                                                       | parsed from mix name                      | —                                                |
+| ISRC              | the file's own tag                                                                                                              | musicfetch `isrc`                         | —                                                |
+| composer (`TCOM`) | musicbrainz work → composer (F28)                                                                                               | —                                         | —                                                |
+| lyricist (`TEXT`) | musicbrainz work → lyricist (F28)                                                                                               | —                                         | —                                                |
 
 ## 7a. naming and tag shape
 
@@ -1322,17 +1332,16 @@ verbatim.**
 **mix-name normalisation.** the library currently holds both `[extended mix]`
 (12×) and bare `[extended]`. one spelling wins:
 
-| observed | normalised |
-|---|---|
+| observed                                       | normalised                                           |
+| ---------------------------------------------- | ---------------------------------------------------- |
 | `Extended Mix`, `Extended Version`, `Extended` | **`Extended`** (the primary release in dance — F23a) |
-| `Radio Edit`, `Radio Mix`, `Radio Version` | **`Radio Edit`** |
-| `Original Mix`, `Original Version` | **`Original`** |
-| `{X} Remix`, `{X} Edit`, `{X} Flip`, `{X} VIP` | unchanged, `{X}` → `TPE4` |
-| `Continuous Mix`, `Instrumental`, `Club Mix` | unchanged |
+| `Radio Edit`, `Radio Mix`, `Radio Version`     | **`Radio Edit`**                                     |
+| `Original Mix`, `Original Version`             | **`Original`**                                       |
+| `{X} Remix`, `{X} Edit`, `{X} Flip`, `{X} VIP` | unchanged, `{X}` → `TPE4`                            |
+| `Continuous Mix`, `Instrumental`, `Club Mix`   | unchanged                                            |
 
 `Original` is written to `TIT3` only when the source states it; it is never
 invented for a track that simply has no mix name.
-
 
 **performer vs composer — indian repertoire only (F28, F38).** this rule is
 **scoped, not global.** it applies when either signal fires:
@@ -1347,23 +1356,23 @@ ISRC country prefix == IN   OR   genre matches
 listings inconsistently promote music directors into `artists[]`.
 
 **everywhere else the full credited artist list is kept.** in western repertoire
-a producer credited as an artist genuinely *is* a main artist — `Metro Boomin`,
+a producer credited as an artist genuinely _is_ a main artist — `Metro Boomin`,
 `Calvin Harris`, `Internet Money` are not pollution to be stripped, and applying
 the indian rule globally would corrupt them. this is the operator's call and it
 is the correct one.
 
 in scope, composers and lyricists go to their own frames, never to `artist`:
 
-| role | frame | source |
-|---|---|---|
-| performers | `TPE1` (`artist`) | musicbrainz `artist-credit` |
-| composer | `TCOM` | musicbrainz work → `composer` |
-| lyricist | `TEXT` | musicbrainz work → `lyricist` |
-| album artist | `TPE2` | the chosen release (§7b) |
+| role         | frame             | source                        |
+| ------------ | ----------------- | ----------------------------- |
+| performers   | `TPE1` (`artist`) | musicbrainz `artist-credit`   |
+| composer     | `TCOM`            | musicbrainz work → `composer` |
+| lyricist     | `TEXT`            | musicbrainz work → `lyricist` |
+| album artist | `TPE2`            | the chosen release (§7b)      |
 
 **`album artist` is allowed to differ sharply from `artist`** — operator
 decision. on a film soundtrack it may be `Various Artists`, a composer, or a
-music director, and that is correct: it describes the *release*, not the
+music director, and that is correct: it describes the _release_, not the
 recording. only `artist` is held to the performers-only rule.
 
 **separator style (OQ-7, decided).** comma between every artist, `&` before the
@@ -1384,10 +1393,10 @@ the album artist's work, the track is not. per operator decision:
 - `TIT3` — `Continuous Mix`
 
 this is the one case where `TPE4` is populated without the mix name naming a
-remixer, and it is deliberate: the mixer *is* the person who modified the
+remixer, and it is deliberate: the mixer _is_ the person who modified the
 recording, which is exactly what `TPE4` means.
 
-**artist vs album artist.** features live in the *title*, so:
+**artist vs album artist.** features live in the _title_, so:
 
 - `artist` — **main artists only**, plus the remixer when there is one
   (matching F25's existing `Calvin Harris, Clementine Douglas & Odd Mob`)
@@ -1401,9 +1410,8 @@ is promoted into `album artist`, which fragments the album in rekordbox.
 section). the library currently mixes `&` and `,` in artist strings
 (`Calvin Harris & Clementine Douglas` vs `Calvin Harris, Clementine Douglas &
 Odd Mob`). serato and rekordbox both treat the field as one opaque string, so
-this is cosmetic — but it should be *consistently* cosmetic: comma between every
+this is cosmetic — but it should be _consistently_ cosmetic: comma between every
 artist, `&` before the last.
-
 
 ## 7b. release selection
 
@@ -1447,7 +1455,7 @@ gets both cases right.
 **deluxe editions are acceptable, and the default still prefers the standard.**
 the operator is not opposed to a track being attributed to a deluxe release. the
 default is `prefer_standard_edition = true` for one concrete reason: the album
-*name* is cleaner — `Demons Protected By Angels` rather than
+_name_ is cleaner — `Demons Protected By Angels` rather than
 `Demons Protected By Angels (Bonus Version)` — and that string goes in `TALB` and
 sorts in rekordbox. the track number was identical here (`4/19` vs `4/20`), so
 nothing is lost. set it false to take whichever release the ranking picks.
@@ -1461,7 +1469,7 @@ the wrong release for `Kamariya`:
 ```
 
 a **1-track single is a promotional release**; the parent album or soundtrack is
-the recording's real home, and it is frequently published *later*. demoting
+the recording's real home, and it is frequently published _later_. demoting
 1-track releases finds the parent; ranking on date alone finds the promo.
 
 **this is also the answer to "single first, album later".** the single is
@@ -1474,16 +1482,16 @@ are kept.
 
 verified against every case probed for this spec:
 
-| ISRC | chosen release | title |
-|---|---|---|
-| `USUM72214489` | `Demons Protected By Angels` (album, 4/19) | standard, not the bonus edition |
-| `INS181801821` | `Stree` (single, 2/4) | `Kamariya` — clean |
-| `INS181700238` | `Badrinath Ki Dulhania` (single, 2/5) | `Roke Na Ruke Naina` — clean |
-| `USJI10000001` | `No Strings Attached` (album, 1/12) | `Bye Bye Bye` |
-| `USUG12509635` | `ODYSSEY` (album, 7/19) | `Don't Want Your Love` |
-| `GBARL1201392` | `18 Months` (album, 10/15) | `Sweet Nothing (feat. Florence Welch)` |
-| `SGB502383473` | `Desperado` (single, 1/1) | `Desperado` — only release |
-| `GBARL2501127` | `Blessings — The Remixes (Part 2)` (single, 4/6) | `Blessings - Odd Mob Remix` |
+| ISRC           | chosen release                                   | title                                  |
+| -------------- | ------------------------------------------------ | -------------------------------------- |
+| `USUM72214489` | `Demons Protected By Angels` (album, 4/19)       | standard, not the bonus edition        |
+| `INS181801821` | `Stree` (single, 2/4)                            | `Kamariya` — clean                     |
+| `INS181700238` | `Badrinath Ki Dulhania` (single, 2/5)            | `Roke Na Ruke Naina` — clean           |
+| `USJI10000001` | `No Strings Attached` (album, 1/12)              | `Bye Bye Bye`                          |
+| `USUG12509635` | `ODYSSEY` (album, 7/19)                          | `Don't Want Your Love`                 |
+| `GBARL1201392` | `18 Months` (album, 10/15)                       | `Sweet Nothing (feat. Florence Welch)` |
+| `SGB502383473` | `Desperado` (single, 1/1)                        | `Desperado` — only release             |
+| `GBARL2501127` | `Blessings — The Remixes (Part 2)` (single, 4/6) | `Blessings - Odd Mob Remix`            |
 
 the last row still carries a `" - {X} Remix"` suffix, which is **correct** — it
 is a genuine remix release, and §7a moves that suffix into `TIT3` rather than
@@ -1495,7 +1503,7 @@ track counts (`trk 36/50`), meaningless track numbers, and the `(From "…")` an
 
 **tier 2 gains spotify.** itunes supplies `trackNumber`/`discNumber` (F4) but
 exposes only the one release its id points at; spotify's ISRC search is what
-makes the *set* of releases visible. once a release is chosen, its track and disc
+makes the _set_ of releases visible. once a release is chosen, its track and disc
 numbers are read from that release, not from an arbitrary apple id.
 
 **consequences for §7a.** with the right release chosen, `(From "…")` never
@@ -1507,7 +1515,6 @@ than the main one.
 states**, including `Various Artists` or a music director. it describes the
 release, not the recording. the performers-only rule binds `artist` alone (§7a,
 F28).
-
 
 ## 7c. artwork
 
@@ -1552,12 +1559,12 @@ accepted `artworkUrl100` (F5). on non-200 or a short read, step down 3000 → 14
 
 **measured on four tracks, 4/4 produced 3000×3000:**
 
-| ISRC | album | accepted via | size |
-|---|---|---|---|
-| `USJI10000001` | No Strings Attached | A — album search | 2256 KB |
-| `INS181801821` | Stree | A — album search | 1755 KB |
-| `GBARL1201392` | 18 Months | **B — song search** | 2162 KB |
-| `USUG12509635` | ODYSSEY | A — album search | 2919 KB |
+| ISRC           | album               | accepted via        | size    |
+| -------------- | ------------------- | ------------------- | ------- |
+| `USJI10000001` | No Strings Attached | A — album search    | 2256 KB |
+| `INS181801821` | Stree               | A — album search    | 1755 KB |
+| `GBARL1201392` | 18 Months           | **B — song search** | 2162 KB |
+| `USUG12509635` | ODYSSEY             | A — album search    | 2919 KB |
 
 **candidate B is not a fallback for rare cases**, and the `18 Months` row is why
 it exists: album search returns `96 Months` there and nothing else. the retired
@@ -1574,33 +1581,32 @@ with no signal that anything went wrong.
 **storage.** 3000² JPEGs run ~1.7-2.9 MB; across 1,494 tracks that is roughly
 **3-4 GB** added to the output tree, consistent with OQ-1's estimate.
 
-
 ## 7d. the complete field set
 
 every tag this project writes, its ID3 frame, and where it comes from. **nothing
 outside this table is written.**
 
-| field | frame | source | coverage |
-|---|---|---|---|
-| title | `TIT2` | spotify chosen release, re-rendered per §7a | 100% |
-| artist | `TPE1` | musicbrainz artist-credit (performers-only in indian scope) | 100% |
-| album | `TALB` | spotify chosen release (§7b) | ~100% |
-| album artist | `TPE2` | chosen release, main artists only | ~100% |
-| year | `TDRC` | **earliest** release across all releases (F33) | ~100% |
-| release date | `TDRL` | same, full date | ~100% |
-| track number | `TRCK` | chosen release `track_number` (F32) | ~100% |
-| disc number | `TPOS` | chosen release `disc_number` (F32) | ~100% |
-| genre | `TCON` | beatport where listed, else itunes | 100% |
-| label | `TPUB` | beatport → discogs `labels[]` → copyright parse (F46) | ~72% today |
-| ISRC | `TSRC` | the file's own tag, once G10 trusts it | 96.3% |
-| **mix name** | `TIT3` | beatport `mix_name`, else parsed from title | remixes + edits |
-| **remixer** | `TPE4` | parsed from mix name, beatport confirms | third-party remixes only |
-| **original artist** | `TOPE` | the chosen release's artist, when a remixer exists | remixes only |
-| **composer** | `TCOM` | musicbrainz work → composer | indian scope |
-| **lyricist** | `TEXT` | musicbrainz work → lyricist | indian scope |
-| **BPM** | `TBPM` | beatport only (§7e) | **partial** |
-| **key** | `TKEY` | beatport only, **written in camelot** (§7f) | **partial** |
-| artwork | `APIC` | verified chain §7c at 3000² | ~100% |
+| field               | frame  | source                                                      | coverage                 |
+| ------------------- | ------ | ----------------------------------------------------------- | ------------------------ |
+| title               | `TIT2` | spotify chosen release, re-rendered per §7a                 | 100%                     |
+| artist              | `TPE1` | musicbrainz artist-credit (performers-only in indian scope) | 100%                     |
+| album               | `TALB` | spotify chosen release (§7b)                                | ~100%                    |
+| album artist        | `TPE2` | chosen release, main artists only                           | ~100%                    |
+| year                | `TDRC` | **earliest** release across all releases (F33)              | ~100%                    |
+| release date        | `TDRL` | same, full date                                             | ~100%                    |
+| track number        | `TRCK` | chosen release `track_number` (F32)                         | ~100%                    |
+| disc number         | `TPOS` | chosen release `disc_number` (F32)                          | ~100%                    |
+| genre               | `TCON` | beatport where listed, else itunes                          | 100%                     |
+| label               | `TPUB` | beatport → discogs `labels[]` → copyright parse (F46)       | ~72% today               |
+| ISRC                | `TSRC` | the file's own tag, once G10 trusts it                      | 96.3%                    |
+| **mix name**        | `TIT3` | beatport `mix_name`, else parsed from title                 | remixes + edits          |
+| **remixer**         | `TPE4` | parsed from mix name, beatport confirms                     | third-party remixes only |
+| **original artist** | `TOPE` | the chosen release's artist, when a remixer exists          | remixes only             |
+| **composer**        | `TCOM` | musicbrainz work → composer                                 | indian scope             |
+| **lyricist**        | `TEXT` | musicbrainz work → lyricist                                 | indian scope             |
+| **BPM**             | `TBPM` | beatport only (§7e)                                         | **partial**              |
+| **key**             | `TKEY` | beatport only, **written in camelot** (§7f)                 | **partial**              |
+| artwork             | `APIC` | verified chain §7c at 3000²                                 | ~100%                    |
 
 **`TOPE` (original artist) is new and only meaningful on remixes.** on
 `Blessings [Odd Mob Remix]` it holds `Calvin Harris, Clementine Douglas` while
@@ -1609,7 +1615,7 @@ is **not written at all** — an empty `TOPE` is noise, and rekordbox shows the
 column regardless.
 
 **composer and lyricist are written wherever musicbrainz supplies them**, not
-only in indian scope. the *indian scope* rule (§7a, F38) governs who is excluded
+only in indian scope. the _indian scope_ rule (§7a, F38) governs who is excluded
 from `TPE1`, not who gets a `TCOM`. a western track with a known composer gets
 one; it is simply rarer that musicbrainz has it and rarer still that it differs
 from the artist.
@@ -1645,9 +1651,8 @@ during its own analysis and prefers its own values over tags, so computing them
 here buys almost nothing for ~120 MB of dependencies. an empty field is honest;
 a guessed one gets trusted.
 
-where a source *does* supply them they are kept — beatport today, and any future
+where a source _does_ supply them they are kept — beatport today, and any future
 source that carries them. key is normalised to camelot on the way in (§7f).
-
 
 ## 7f. key notation — camelot
 
@@ -1659,20 +1664,20 @@ than `Eb Minor` means the tag is usable without mental conversion mid-set.
 the wheel is circle-of-fifths ordered — `B` is major, `A` is its relative minor,
 so `nA` and `nB` share the same seven notes and mix cleanly.
 
-| # | A (minor) | B (major) |
-|---|---|---|
-| 1 | A♭ / G♯ | B |
-| 2 | E♭ / D♯ | F♯ / G♭ |
-| 3 | B♭ / A♯ | D♭ / C♯ |
-| 4 | F | A♭ / G♯ |
-| 5 | C | E♭ / D♯ |
-| 6 | G | B♭ / A♯ |
-| 7 | D | F |
-| 8 | A | C |
-| 9 | E | G |
-| 10 | B | D |
-| 11 | F♯ / G♭ | A |
-| 12 | D♭ / C♯ | E |
+| #   | A (minor) | B (major) |
+| --- | --------- | --------- |
+| 1   | A♭ / G♯   | B         |
+| 2   | E♭ / D♯   | F♯ / G♭   |
+| 3   | B♭ / A♯   | D♭ / C♯   |
+| 4   | F         | A♭ / G♯   |
+| 5   | C         | E♭ / D♯   |
+| 6   | G         | B♭ / A♯   |
+| 7   | D         | F         |
+| 8   | A         | C         |
+| 9   | E         | G         |
+| 10  | B         | D         |
+| 11  | F♯ / G♭   | A         |
+| 12  | D♭ / C♯   | E         |
 
 anchors verified against published charts: **1A = A♭ minor, 1B = B major,
 8A = A minor, 8B = C major**
@@ -1686,7 +1691,6 @@ plus enharmonic spellings (`D#`→`Eb`, `C#`→`Db`, `Gb`→`F#`) and case varia
 **an unparseable key returns `None` and `TKEY` is left empty.** a wrong key is
 worse than a missing one: it survives into a set and gets trusted. this mirrors
 the §7e position on BPM.
-
 
 ## 8. gates — a stage is not done until these pass
 
@@ -1705,8 +1709,8 @@ the §7e position on BPM.
   - outside ±5s → same work, different edit; **only** `genre`, `sub_genre`,
     `label` and remixer identity transfer. `bpm`, `key`, `length` and beatport's
     `isrc` are **discarded**.
-  zero results is a normal outcome, not a failure. the fraction of tracks landing
-  in each class is reported by `verify`.
+    zero results is a normal outcome, not a failure. the fraction of tracks landing
+    in each class is reported by `verify`.
 - **G10 ISRC trust.** every track's local duration is compared to the duration
   of the recording its ISRC claims (F40). delta > ±5s means **the ISRC does not
   describe this file**: it is stripped, the track goes to tier-0 identity, and it
@@ -1835,7 +1839,7 @@ deleting a line's value reverts that field to resolver control on the next run.
 
 **title/artist/album are written for legibility, not read as input.** they make
 an md5-keyed file scannable; the authoritative values live in the cache (§9a).
-the fields the resolver *reads back* are `isrc`, the service URLs, and any direct
+the fields the resolver _reads back_ are `isrc`, the service URLs, and any direct
 field override.
 
 **it is the only hand-editable artefact in the system, and it is safe to delete.**
@@ -1904,7 +1908,7 @@ than downloading (F20). quality degradation must never be silent — and because
 validity is transient, this is a **per-run precondition, not a setup step**.
 
 **gate G7 — acquisition identity.** a downloaded track is only admitted to the
-library once it carries an ISRC *and* that ISRC's resolved duration is within
+library once it carries an ISRC _and_ that ISRC's resolved duration is within
 ±5s of the downloaded audio. a `/url` result that disagrees on duration is a
 wrong match, and youtube is full of edits, sped-up versions and live cuts that
 resolve confidently to the studio recording. measured baseline: 8/8 resolved.
@@ -1919,7 +1923,6 @@ converted and are not in scope to revisit. ~~the open question is **new** acquis
 both DJ apps read the full frame set (F50). the 5.4× cost is accepted
 deliberately: it buys tag support, not audio quality, and the conversion is a
 faithful decode of the AAC rather than a container swap.
-
 
 ## 10a. premium cookies — sourcing and placement
 
@@ -1936,7 +1939,7 @@ the failure that produced F20.
 
 **the assurance is the live probe, not the extraction method.** G8 runs
 `yt_cookies.py check` against the real API before every batch, so validity is
-established by *observing a premium itag being offered*, not by assuming a file
+established by _observing a premium itag being offered_, not by assuming a file
 is good. a file-based flow would still need that same probe — it just adds a
 staleness mode.
 
@@ -1952,10 +1955,10 @@ working file.
 
 two profiles, two properties:
 
-| profile | works | durability |
-|---|---|---|
-| `chrome:Default` | yes, verified today — itag 141 at 258k | **rotates.** youtube re-issues cookies as the operator browses, and a rotated set is rejected (F20) |
-| `chrome:ytdlp` (dedicated) | same | **does not rotate** — logged in once, never browsed again |
+| profile                    | works                                  | durability                                                                                          |
+| -------------------------- | -------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `chrome:Default`           | yes, verified today — itag 141 at 258k | **rotates.** youtube re-issues cookies as the operator browses, and a rotated set is rejected (F20) |
+| `chrome:ytdlp` (dedicated) | same                                   | **does not rotate** — logged in once, never browsed again                                           |
 
 the wiki's incognito procedure exists because incognito cookies are memory-only
 and need a browser extension to export. **a dedicated profile has the same
@@ -1982,8 +1985,7 @@ checked before either:
 ```
 
 **a format failure is treated as systemic until proven otherwise.** cookie
-validity is transient (F20), so a batch that starts valid can rotate at track
-200. on the **first** `-f 141/774` failure the pipeline re-runs the cookie probe:
+validity is transient (F20), so a batch that starts valid can rotate at track 200. on the **first** `-f 141/774` failure the pipeline re-runs the cookie probe:
 
 ```
 probe now FAILS  →  cookies died mid-batch.
@@ -2000,7 +2002,7 @@ ban-risk note).
 
 **aborting is cheap, which is why it is the default.** identity resolution needs
 no cookies — musicfetch `/url` (F19) and the metadata probe run unauthenticated —
-so a cookie failure blocks *downloading*, never *identifying*.
+so a cookie failure blocks _downloading_, never _identifying_.
 
 ```
 resolve 50 identities     → cached (§9a), survives the abort
@@ -2013,7 +2015,6 @@ re-run                    → 0 API calls re-spent, downloads resume
 sidecar, so an abort loses nothing and a resume re-downloads nothing. this is what
 makes "stop immediately" the cheap option rather than the expensive one — there is
 no progress to protect by pressing on.
-
 
 ## 11. non-goals (v1)
 
@@ -2032,15 +2033,15 @@ no progress to protect by pressing on.
 **three classes, three policies (F39).** the distinction matters: only one class
 is safely automatic.
 
-| class | test | policy |
-|---|---|---|
-| **A — true duplicate** | same ISRC **and** same audio md5 | **auto-resolve.** keep one, delete the other. byte-identical audio cannot lose information. |
-| **B — same ISRC, different audio** | same ISRC, differing md5, duration delta > 5s | **never auto-delete.** these are different recordings; one ISRC is wrong. re-resolve both by duration (F40) and queue for review. |
-| **C — ISRC on an unrelated song** | duration delta > 5s vs the ISRC's own duration | **strip the ISRC**, route the file through tier-0 identity (§10), queue for review. |
+| class                              | test                                           | policy                                                                                                                            |
+| ---------------------------------- | ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| **A — true duplicate**             | same ISRC **and** same audio md5               | **auto-resolve.** keep one, delete the other. byte-identical audio cannot lose information.                                       |
+| **B — same ISRC, different audio** | same ISRC, differing md5, duration delta > 5s  | **never auto-delete.** these are different recordings; one ISRC is wrong. re-resolve both by duration (F40) and queue for review. |
+| **C — ISRC on an unrelated song**  | duration delta > 5s vs the ISRC's own duration | **strip the ISRC**, route the file through tier-0 identity (§10), queue for review.                                               |
 
 **deletion is always to a quarantine directory, never `rm`.** the operator
 reviews and empties it. combined with the §9 rule that the source tree is never
-mutated, class A resolution on the *source* library is a report; only the output
+mutated, class A resolution on the _source_ library is a report; only the output
 tree is de-duplicated.
 
 **preventing future duplicates.** the sidecar holds a unique index on ISRC and on
@@ -2081,7 +2082,6 @@ rejected even when its duration matches perfectly.
 resolves the ISRC via musicfetch `/url` (F19) and then re-searches youtube music
 for the audio release rather than downloading the page it was handed.
 
-
 ## 12. project structure, commands, testing
 
 ```
@@ -2116,13 +2116,13 @@ tests/{unit,integration}/
 
 root-level docs, and what each is for:
 
-| file | holds |
-|---|---|
-| `SPEC.md` | what we are building, and why each decision went the way it did |
-| `CLAUDE.md` | how we work — style, tooling, commits, working agreements |
-| `tasks/plan.md` | the build order, its dependency graph and its checkpoints |
-| `tasks/todo.md` | the task list, with acceptance criteria per task |
-| `README.md` | **what exists and runs today** — the current state, nothing planned |
+| file            | holds                                                               |
+| --------------- | ------------------------------------------------------------------- |
+| `SPEC.md`       | what we are building, and why each decision went the way it did     |
+| `CLAUDE.md`     | how we work — style, tooling, commits, working agreements           |
+| `tasks/plan.md` | the build order, its dependency graph and its checkpoints           |
+| `tasks/todo.md` | the task list, with acceptance criteria per task                    |
+| `README.md`     | **what exists and runs today** — the current state, nothing planned |
 
 **`README.md` covers:** what the project does in a paragraph, prerequisites
 (`uv`, `ffmpeg`, the `.env` keys actually needed), install, **the commands that
@@ -2173,8 +2173,8 @@ live APIs, marked and excluded from the default run.
   never substitute.** `verify` emits a re-acquisition worklist naming every track
   whose beatport match is **materially longer** (>15s), with both durations and
   the beatport URL. it **never rewrites the file and never adopts beatport's
-  ISRC** — the operator's point is decisive: the beatport record is a *different
-  recording*, so taking its ISRC would label the file as a track it is not. this
+  ISRC** — the operator's point is decisive: the beatport record is a _different
+  recording_, so taking its ISRC would label the file as a track it is not. this
   is why F23's field-class split exists.
 - ~~**bollywood `(From "…")` suffix.**~~ **resolved by §7b** — the suffix marks a
   compilation release. choosing the correct release removes it; no string
@@ -2241,10 +2241,21 @@ single htmx attribute against an endpoint that returns an HTML fragment:
 
 ```html
 <!-- the review queue, filtered server-side -->
-<input name="q" hx-get="/review" hx-target="#rows" hx-trigger="keyup changed delay:300ms">
+<input
+  name="q"
+  hx-get="/review"
+  hx-target="#rows"
+  hx-trigger="keyup changed delay:300ms"
+/>
 
 <!-- accept a proposed value; writes library.toml (§9b) -->
-<button hx-post="/review/{md5}/accept" hx-target="closest tr" hx-swap="outerHTML">accept</button>
+<button
+  hx-post="/review/{md5}/accept"
+  hx-target="closest tr"
+  hx-swap="outerHTML"
+>
+  accept
+</button>
 
 <!-- a 72-minute resolve, without holding an http request open -->
 <div hx-get="/jobs/{id}" hx-trigger="every 2s" hx-swap="innerHTML"></div>
@@ -2293,7 +2304,7 @@ recording id is **optional** — textual metadata (track title and artist, album
 title and artist, year, track and disc number) is accepted instead — but the
 docs are blunt that a fingerprint with no metadata "is not very useful".
 
-**the tension worth naming now.** the tracks most *worth* contributing are the
+**the tension worth naming now.** the tracks most _worth_ contributing are the
 ones acoustid and musicbrainz do not already have — and those are largely the
 same regional recordings musicbrainz returned `Not Found` for (F30/F31:
 `Kamariya`, `Desperado`). for exactly those we have **no MBID to submit**, only
@@ -2312,7 +2323,7 @@ identifier present is `TSRC`.
 
 it stays that way. the recording id and any chromaprint fingerprint live **in
 the sidecar SQLite, not in ID3** — two columns in a database the operator can
-delete without touching a single audio file. so the files stay clean *and* a
+delete without touching a single audio file. so the files stay clean _and_ a
 future acoustid pass stays cheap; these were never in tension.
 
 without those columns a submission pass would have to re-resolve the whole
@@ -2322,4 +2333,3 @@ recover ids it already had.
 **precondition, not a detail:** submitting wrong mappings actively damages a
 shared database. a submission pass must run only over tracks that passed every
 gate in §8, never over flagged or fallback-resolved ones.
-
