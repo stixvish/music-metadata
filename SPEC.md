@@ -1064,6 +1064,39 @@ a sufficient one.**
 `pcm_s16be` and a lossy source carries no information that a 24-bit store would
 preserve. 16/44.1 matches the library and costs 33% less than 24-bit.
 
+**F51 — spotify's search caps `limit` at 10, and one ISRC returns 34 releases.**
+measured 2026-09-14 against the operator's own client credentials:
+
+```text
+limit=10  HTTP 200   10 items
+limit=20  HTTP 400   {"error": {"status": 400, "message": "Invalid limit"}}
+limit=50  HTTP 400   same
+```
+
+the published range is 0-50
+([developer.spotify.com/documentation/web-api/reference/search](https://developer.spotify.com/documentation/web-api/reference/search),
+checked 2026-09-14); the live API disagrees, and the live API wins.
+
+**this matters because F33 takes the MIN release date over ALL releases.**
+paginating `USJI10000001` to exhaustion returns **34 releases across 4 pages** —
+§5a's worked example saw only the first 10. search returns _relevance_ order,
+not date order, so a later page can carry an earlier release and stopping at
+page one would silently write the wrong year.
+
+```text
+USJI10000001   34 releases   4 pages
+INS181801821   15 releases   2 pages
+GBARL2501127    1 release    1 page
+```
+
+**`tracks.total` is not usable as a stopping condition** — the same query
+returned `total: 34` and then `total: 0` within a minute. pagination therefore
+stops on an **empty or short page**, never on a count.
+
+the cost is real: a popular recording now costs up to 4 calls instead of 1,
+against F8's 20 req/min. it is not optional — §7b's ranking and F33's date both
+operate over the full candidate set.
+
 **F8 — rate limits are gentler in practice than documented.**
 published Starter is 6 req/min ([musicfetch.io](https://musicfetch.io/) pricing,
 checked 2026-09-14). measured: **20 sequential requests at 1 req/s, all HTTP
@@ -1144,16 +1177,16 @@ if there is no ISRC, the track goes to the tier-0 path (§10) instead.
 **step 1 — spotify, queried DIRECTLY by ISRC.** _(not via musicfetch)_
 
 ```text
-GET /v1/search?q=isrc:USJI10000001&type=track&limit=10
-→ 10 releases
+GET /v1/search?q=isrc:USJI10000001&type=track&limit=10&offset=0…30
+→ 34 releases across 4 pages (F51)
 ```
 
-rank them `album > single > compilation`, then `total_tracks` DESC, then
+rank them `album > single > compilation`, then 1-track releases last, then
 `release_date` ASC (§7b). this yields two different things:
 
 ```text
 chosen release   → No Strings Attached | album artist *NSYNC | trk 1/12 | disc 1
-earliest date    → 2000-01-17   = MIN(release_date) over ALL 10 releases
+earliest date    → 2000-01-17   = MIN(release_date) over ALL 34 releases
 ```
 
 the chosen release supplies `album`, `album artist`, `track`, `disc`. the
