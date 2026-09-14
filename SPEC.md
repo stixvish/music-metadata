@@ -1097,6 +1097,35 @@ the cost is real: a popular recording now costs up to 4 calls instead of 1,
 against F8's 20 req/min. it is not optional — §7b's ranking and F33's date both
 operate over the full candidate set.
 
+**F52 — musicbrainz names composers in indian repertoire and `writer`
+everywhere else.** measured 2026-09-14 over two samples of the library, walking
+`/ws/2/isrc/{ISRC}` -> performance relation -> `/ws/2/work/{id}?inc=artist-rels`:
+
+| sample                   | recordings found | linked to a work | `composer` | `lyricist` | `writer` |
+| ------------------------ | ---------------- | ---------------- | ---------- | ---------- | -------- |
+| indian (`IN` prefix), 12 | 10               | 10               | **10**     | **11**     | 0        |
+| western, 12              | 12               | 6                | 0          | 0          | **34**   |
+
+**this confirms §7d rather than contradicting it.** F28's claim — that
+musicbrainz separates performers from composers — holds precisely where §7a
+scopes the rule: indian repertoire, where the distinction is editorially
+maintained and coverage was 10/10.
+
+western works use the generic `writer` relation, which records _that_ someone
+wrote the work and not _which role they held_. **`writer` is therefore not
+written to `TCOM` or `TEXT`.** promoting it would assert a role musicbrainz
+deliberately left unstated, and §7f's rule applies: a wrong value is worse than
+a missing one, because a wrong one gets trusted. the practical cost is that
+western tracks usually carry no `TCOM`, which §7d already anticipated
+("it is simply rarer that musicbrainz has it").
+
+two operational facts from the same probe, neither previously recorded:
+
+- **a `User-Agent` is mandatory** — the API returns `HTTP 403` without one.
+- **`currently busy` is `HTTP 503`**, and the very first request of this probe
+  received one. F30 is not a historical curiosity; it fires routinely, and a
+  client that treats it as a miss silently drops artist credits.
+
 **F8 — rate limits are gentler in practice than documented.**
 published Starter is 6 req/min ([musicfetch.io](https://musicfetch.io/) pricing,
 checked 2026-09-14). measured: **20 sequential requests at 1 req/s, all HTTP
