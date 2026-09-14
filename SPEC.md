@@ -533,6 +533,51 @@ of three calls here — **retry with backoff is required, not optional.** at two
 hops per track a full pass is ~48 minutes, so work-level lookups are cached and
 run as a second pass rather than inline.
 
+**F29 — spotify exposes no credit roles; the usable signal is the title.**
+the credits panel in the spotify app (songwriters, producers, performed by) is
+**not in the web API** — `GET /tracks/{id}` returns `artists[]` described only as
+"the artists who performed the track", with no role field and no writer or
+producer data ([developer.spotify.com, checked 2026-09-14](https://developer.spotify.com/documentation/web-api/reference/get-track)).
+
+what *is* usable is `track.name`, which carries the feature explicitly:
+
+```
+Sweet Nothing (feat. Florence Welch)   artists: ['Calvin Harris', 'Florence Welch']
+Body & Soul (feat. Biig Piig)          artists: ['Emotional Oranges', 'Biig Piig']
+```
+
+**the tempting heuristic — `track.artists` minus `album.artists` — must not be
+used to assign roles.** it fails in two measured ways:
+
+```
+Lat Lag Gayee   album.artists: ['Pritam']          diff: ['Benny Dayal', 'Shalmali Kholgade']
+                                                   ← the COMPOSER is the album artist;
+                                                     the diff is the actual vocalists
+Lunar           album.artists: ['David Guetta']    diff: ['AFROJACK']
+                                                   ← a co-headline collaboration,
+                                                     not a feature
+```
+
+on bollywood it **inverts** performer and composer; on collaborations it demotes
+a co-main artist to a feature. the diff is kept as a weak corroborating hint and
+is never decisive.
+
+**F30 — musicbrainz coverage is good, and the earlier "miss" was a server error.**
+sampled 30 ISRCs across the library at 1 req/s with retry:
+
+```
+resolved   28 / 30   (93%)
+not found   2 / 30   — Kamariya (INS181801821), Desperado (SGB502383473)
+```
+
+both failures are genuine `"error": "Not Found"`, and both are regional
+(indian/singaporean registrants). **`Calvin Harris — Sweet Nothing` resolves
+correctly** to `Calvin Harris feat. Florence Welch`; an earlier revision of this
+spec recorded it as a coverage gap, which was wrong — it was a transient
+`"currently busy"` response mistaken for a miss. **a busy response and a miss
+must never be conflated**: the parser distinguishes `error: Not Found` from
+`currently busy`, and only the former counts as absent.
+
 **F8 — rate limits are gentler in practice than documented.**
 published Starter is 6 req/min ([musicfetch.io](https://musicfetch.io/) pricing,
 checked 2026-09-14). measured: **20 sequential requests at 1 req/s, all HTTP
@@ -638,12 +683,14 @@ is still useful as *corroboration* when the feature appears in `trackName`.
 **resolution order for artist credit:**
 
 1. **musicbrainz `artist-credit` joinphrases** — structural, unambiguous.
-   coverage is not total: 1 of 5 sampled ISRCs returned no recording.
+   measured coverage **28/30 (93%)**, both misses regional (F30).
 2. **the filename** — `Main - Title (ft. Featured)`. this is the operator's own
    curation and it agreed with musicbrainz on **every case where both were
    present**. it is a first-class source here, not a last resort.
-3. **itunes `trackName`** — extract a trailing `(feat. …)` when present.
-4. **musicfetch `artists[]`** — order only, roles unknown. last resort.
+3. **spotify / itunes `name`** — extract a trailing `(feat. …)` when present.
+   this is the designated fallback where musicbrainz has no recording (F29/F30).
+4. **`track.artists` minus `album.artists`** — a **hint only, never decisive**;
+   it inverts roles on bollywood and demotes collaborators (F29).
 
 **cross-validation gate (G6).** when musicbrainz and the filename agree, the
 credit is accepted automatically. when they disagree, the track is **flagged for
