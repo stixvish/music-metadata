@@ -17,7 +17,11 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from music_metadata import library_map
+from music_metadata.config import get, load_env
+from music_metadata.isrc_recovery import Recovery, Status, recover
 from music_metadata.release import choose_release
+from music_metadata.sources.musicfetch import Musicfetch
 from music_metadata.sources.spotify import candidates_from_raw
 from music_metadata.store import Store
 from music_metadata.web import jobs
@@ -42,7 +46,7 @@ _GATE_LABELS = {
 }
 
 
-def create_app(store: Store) -> FastAPI:
+def create_app(store: Store, map_path: Path = Path("library.toml")) -> FastAPI:
   """Build the app around an already-open store.
 
   Taking the store rather than a path keeps the tests and the CLI on one
@@ -50,12 +54,48 @@ def create_app(store: Store) -> FastAPI:
 
   Args:
     store: the sidecar cache backing every screen.
+    map_path: `library.toml` (§9b), which the ISRC screen writes to. The same
+      file the CLI uses, so an edit made in the browser is an edit the next
+      `resolve` picks up.
 
   Returns:
     The configured application.
   """
   app = FastAPI(title="music-metadata")
   app.mount("/static", StaticFiles(directory=str(_HERE / "static")), name="static")
+
+  def _overrides() -> dict[str, dict[str, str]]:
+    """Read the map's hand-edited values.
+
+    Returns:
+      md5 to asserted fields; empty when no map exists yet.
+    """
+    return library_map.read(map_path) if map_path.is_file() else {}
+
+  def make_musicfetch() -> Musicfetch | None:
+    """Build a musicfetch client, or None when no token is configured.
+
+    §5's rule applied here: a missing credential disables a feature, it does
+    not break the app. The screen says what is missing instead.
+
+    Returns:
+      The client, or None.
+    """
+    load_env()
+    token = get("MUSICMATCH_TOKEN")
+    return Musicfetch(token) if token else None
+
+  def write_isrc(md5: str, isrc: str) -> bool:
+    """Record a recovered ISRC in the map.
+
+    Args:
+      md5: the file's audio hash.
+      isrc: the verified ISRC.
+
+    Returns:
+      Whether the map changed.
+    """
+    return library_map.set_isrc(map_path, md5, isrc)
 
   @app.get("/", response_class=HTMLResponse)
   def library(
@@ -75,6 +115,88 @@ def create_app(store: Store) -> FastAPI:
     """Just the table, for htmx to swap in — no full-page reload to filter."""
     return _TEMPLATES.TemplateResponse(
       request=request, name="rows.html", context=_library_context(store, q, state, sort)
+    )
+
+  def _no_isrc_rows() -> list[dict[str, object]]:
+    """The files still missing an ISRC, with any hand-edit already applied.
+
+    A file whose ISRC was filled in on an earlier visit drops off the list —
+    the map is the source of truth for what is still outstanding, not the tag.
+
+    Returns:
+      One row per outstanding file.
+    """
+    overrides = _overrides()
+    rows = []
+    for row in store.query(
+      "SELECT audio_md5, path, duration_s FROM files "
+      "WHERE isrc_from_tag IS NULL ORDER BY path"
+    ):
+      md5 = row["audio_md5"]
+      if (overrides.get(md5, {}).get("isrc") or "").strip():
+        continue
+      seconds = int(row["duration_s"] or 0)
+      rows.append(
+        {
+          "md5": md5,
+          "file": Path(row["path"]).name,
+          "duration_s": row["duration_s"],
+          "length": f"{seconds // 60}:{seconds % 60:02d}",
+          "result": None,
+          "url": "",
+        }
+      )
+    return rows
+
+  @app.get("/isrc", response_class=HTMLResponse)
+  def isrc(request: Request) -> HTMLResponse:
+    """§14: fill in the ISRCs the tags never carried, from youtube links."""
+    return _TEMPLATES.TemplateResponse(
+      request=request,
+      name="isrc.html",
+      context={"rows": _no_isrc_rows(), "current": "/isrc"},
+    )
+
+  @app.post("/isrc/{md5}", response_class=HTMLResponse)
+  def isrc_lookup(request: Request, md5: str, url: str = Form(...)) -> HTMLResponse:
+    """Resolve one pasted link and, if it verifies, write it to the map."""
+    rows = store.query(
+      "SELECT audio_md5, path, duration_s FROM files WHERE audio_md5 = ?", (md5,)
+    )
+    if not rows:
+      raise HTTPException(status_code=404, detail="no such file")
+    file = rows[0]
+    seconds = int(file["duration_s"] or 0)
+
+    url = url.strip()
+    if not url:
+      result = Recovery(status=Status.NOT_FOUND, note="paste a link first.")
+    else:
+      client = make_musicfetch()
+      if client is None:
+        result = Recovery(
+          status=Status.ERROR,
+          note="MUSICMATCH_TOKEN is not set; add it to .env (see .env.example).",
+        )
+      else:
+        try:
+          result = recover(url, client, file["duration_s"])
+        finally:
+          client.close()
+
+    if result.usable and result.isrc:
+      write_isrc(md5, result.isrc)
+
+    row = {
+      "md5": md5,
+      "file": Path(file["path"]).name,
+      "duration_s": file["duration_s"],
+      "length": f"{seconds // 60}:{seconds % 60:02d}",
+      "result": result,
+      "url": "" if result.usable else url,
+    }
+    return _TEMPLATES.TemplateResponse(
+      request=request, name="isrc_row.html", context={"row": row}
     )
 
   @app.get("/review", response_class=HTMLResponse)

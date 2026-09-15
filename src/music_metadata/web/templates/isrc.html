@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}isrc · music-metadata{% endblock %}
+{% block content %}
+    <h1>recover ISRCs</h1>
+    <p class="empty">
+        {{ rows | length }} file{{ "" if rows | length == 1 else "s" }} carry no ISRC.
+        Paste a YouTube link for one and the ISRC is read from it (F19), checked
+        against the file's own length, and written to <code>library.toml</code>.
+    </p>
+    <p class="empty">
+        A link to the <strong>official video</strong> works too — it resolves to no
+        release on its own, so the track is looked up and used instead.
+    </p>
+    {% if not rows %}
+        <p class="empty">Nothing left to fill in.</p>
+    {% else %}
+        <div class="scroll">
+            <table>
+                <caption>tracks with no ISRC</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">file</th>
+                        <th scope="col">length</th>
+                        <th scope="col">youtube link</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in rows %}
+                        <tr id="row-{{ row.md5 }}">{% include "isrc_row.html" %}</tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% endif %}
+{% endblock %}

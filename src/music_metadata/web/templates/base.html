@@ -10,7 +10,7 @@
     <body>
         <a class="skip" href="#main">skip to content</a>
         <nav aria-label="screens">
-            {% for href, label in [("/", "library"), ("/review", "review"), ("/diff", "diff"), ("/acquire", "acquire")] %}
+            {% for href, label in [("/", "library"), ("/review", "review"), ("/isrc", "isrc"), ("/diff", "diff"), ("/acquire", "acquire")] %}
                 <a href="{{ href }}"
                    {% if href == current %}aria-current="page"{% endif %}>{{ label }}</a>
             {% endfor %}

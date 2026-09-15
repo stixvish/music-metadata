@@ -1,0 +1,30 @@
+<td>
+    <div>{{ row.file }}</div>
+    {% if row.result %}
+        <div class="src">
+            {% if row.result.usable %}
+                <span class="state state-resolved">✓ {{ row.result.isrc }}</span>
+                {{ row.result.who }} — {{ row.result.name }}
+                {% if row.result.note %}<br />{{ row.result.note }}{% endif %}
+            {% else %}
+                <span class="state state-flagged">⚠ not written</span> {{ row.result.note }}
+            {% endif %}
+        </div>
+    {% endif %}
+</td>
+<td class="num">{{ row.length }}</td>
+<td>
+    <form hx-post="/isrc/{{ row.md5 }}"
+          hx-target="#row-{{ row.md5 }}"
+          hx-swap="innerHTML"
+          hx-disabled-elt="find button">
+        <label class="visually-hidden" for="url-{{ row.md5 }}">YouTube link for {{ row.file }}</label>
+        <input id="url-{{ row.md5 }}"
+               name="url"
+               type="text"
+               value="{{ row.url or '' }}"
+               placeholder="https://music.youtube.com/watch?v=…"
+               autocomplete="off" />
+        <button type="submit">look up</button>
+    </form>
+</td>

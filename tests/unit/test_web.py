@@ -98,3 +98,47 @@ def test_a_failed_job_shows_its_error(client):
   r = client.get(f"/jobs/{job_id}")
 
   assert "cookies rotated mid-batch" in r.text
+
+
+# --- the isrc screen -----------------------------------------------------------
+
+
+def test_the_isrc_screen_lists_files_missing_one(client):
+  client.store.put_file(
+    path="/m/The Killers - Mr. Brightside.aiff",
+    audio_md5="aaa",
+    duration_s=222.0,
+    isrc=None,
+  )
+
+  page = client.get("/isrc")
+
+  assert page.status_code == 200
+  assert "Mr. Brightside" in page.text
+
+
+def test_a_file_that_already_has_an_isrc_is_not_listed(client):
+  client.store.put_file(
+    path="/m/*NSYNC - Bye Bye Bye.aiff",
+    audio_md5="bbb",
+    duration_s=200.0,
+    isrc="USJI10000001",
+  )
+
+  assert "Bye Bye Bye" not in client.get("/isrc").text
+
+
+def test_an_empty_url_is_reported_without_a_network_call(client):
+  """the operator hit look-up on a blank box. that is a nudge, not a failure,
+  and it must not reach musicfetch."""
+  client.store.put_file(path="/m/x.aiff", audio_md5="ccc", duration_s=222.0, isrc=None)
+
+  row = client.post("/isrc/ccc", data={"url": "  "})
+
+  assert row.status_code == 200
+  assert "paste a link first" in row.text
+  assert "not written" in row.text
+
+
+def test_a_lookup_for_an_unknown_file_is_a_404(client):
+  assert client.post("/isrc/nope", data={"url": "https://x"}).status_code == 404
