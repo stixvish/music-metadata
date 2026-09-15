@@ -41,6 +41,28 @@ _RAW_COLUMNS = {
 
 _SCHEMA = Path(__file__).with_name("schema.sql")
 
+# columns added to existing tables after the first release. `CREATE TABLE IF
+# NOT EXISTS` silently does nothing to a table that already exists, so a
+# sidecar created before a column was added keeps the old shape and every read
+# of the new column raises. this list is the migration.
+_ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
+  ("artwork", "candidate", "TEXT"),
+  ("review", "current", "TEXT"),
+)
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+  """Add any column this schema has gained since the database was created.
+
+  Args:
+    conn: the open connection.
+  """
+  for table, column, kind in _ADDED_COLUMNS:
+    existing = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+    if existing and column not in existing:
+      conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {kind}")  # noqa: S608 — names are literals above
+  conn.commit()
+
 
 class Store:
   """the sidecar database."""
@@ -82,6 +104,7 @@ class Store:
     conn.execute("PRAGMA journal_mode = WAL")
     try:
       conn.executescript(_SCHEMA.read_text())
+      _migrate(conn)
       yield cls(conn)
     finally:
       # no trailing commit: every write below commits as it goes, so a commit

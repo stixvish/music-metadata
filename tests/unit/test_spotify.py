@@ -277,3 +277,20 @@ def test_a_release_with_no_image_reports_none():
   single = next(c for c in got.candidates if c.album_type == "single")
 
   assert single.image_url is None
+
+
+def test_spotify_gets_more_retries_than_the_default():
+  """tier 1 is the one tier nothing routes around: no release means no album,
+  no track number and no date. it is worth waiting longer for."""
+  client = Spotify(client_id="i", client_secret="s")
+  try:
+    assert client._source.retries >= 5
+  finally:
+    client.close()
+
+
+def test_the_rate_is_below_the_measured_429_threshold():
+  """measured: 20/min started returning 429 about 60 tracks into a full pass."""
+  from music_metadata.sources.spotify import _RATE_PER_MINUTE
+
+  assert _RATE_PER_MINUTE <= 10

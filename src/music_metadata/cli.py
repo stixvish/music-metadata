@@ -61,6 +61,10 @@ from music_metadata.verify import (
 
 DEFAULT_LIBRARY = Path.home() / "Music/library"
 
+# a single failure is a track to retry later; this many in a row means the
+# service is refusing us and continuing just burns quota against a wall.
+_MAX_CONSECUTIVE_ERRORS = 10
+
 
 def _candidates_for(store: Store, probed: ProbedFile) -> list[ReleaseCandidate]:
   """Re-parse the cached spotify payload for one track. No network.
@@ -332,6 +336,7 @@ def cmd_resolve(args: argparse.Namespace) -> int:
     art_dir = args.sidecar.parent / "artwork"
     art_dir.mkdir(parents=True, exist_ok=True)
     fetched = cached = mb_hits = mb_misses = mb_errors = 0
+    spotify_errors = 0
     art_hits = art_misses = bp_hits = bp_misses = 0
     try:
       for index, row in enumerate(rows, start=1):
@@ -352,8 +357,25 @@ def cmd_resolve(args: argparse.Namespace) -> int:
           continue
 
         if missing("spotify"):
-          result = spotify.search_isrc(isrc)
-          store.put_raw(isrc, "spotify", result.raw)
+          try:
+            result = spotify.search_isrc(isrc)
+            store.put_raw(isrc, "spotify", result.raw)
+          except SourceError as exc:
+            # **one track must never abort the run.** spotify rate-limits at
+            # scale, and an uncaught 429 here killed a 1,439-track pass at
+            # track 61 — losing nothing cached, but stopping everything. the
+            # track is left unresolved and picked up on the next pass.
+            spotify_errors += 1
+            emit(f"[{index}/{len(rows)}] {isrc} — spotify: {exc}", level=Level.WARN)
+            if spotify_errors >= _MAX_CONSECUTIVE_ERRORS:
+              emit(
+                f"spotify failed {spotify_errors} times in a row — stopping. "
+                f"everything fetched so far is cached; re-run to resume.",
+                level=Level.ERROR,
+              )
+              break
+            continue
+          spotify_errors = 0
         else:
           result = SpotifyResult(
             candidates=candidates_from_raw(store.get_raw(isrc, "spotify")), raw=None
@@ -479,6 +501,8 @@ def cmd_resolve(args: argparse.Namespace) -> int:
     written = write_map(store, args.map)
     emit(f"wrote {args.map} ({written} entries)")
     emit(f"resolved {fetched} fetched, {cached} already cached")
+    if spotify_errors:
+      emit(f"spotify failed on {spotify_errors} track(s)", level=Level.WARN)
     emit(f"musicbrainz {mb_hits} found, {mb_misses} missing, {mb_errors} unavailable")
     emit(f"artwork {art_hits} verified, {art_misses} unverified (G5)")
     if beatport is not None:

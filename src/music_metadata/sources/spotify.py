@@ -39,6 +39,11 @@ _MAX_PAGES = 10
 # refresh a little before expiry so a long run never races the clock.
 _TOKEN_MARGIN_S = 30.0
 
+# spotify does not publish a number and enforces over a rolling window. 20/min
+# was measured hitting 429 about 60 tracks into a full pass — with pagination
+# that is closer to 40 requests a minute — so the ceiling is halved.
+_RATE_PER_MINUTE = 10
+
 
 @dataclass(frozen=True, slots=True)
 class SpotifyResult:
@@ -79,9 +84,14 @@ class Spotify:
     self._source = Source(
       name="spotify",
       base_url=_API,
-      bucket=bucket or TokenBucket(20),
+      bucket=bucket or TokenBucket(_RATE_PER_MINUTE),
       transport=transport,
       sleep=sleep,
+      # tier 1 is the one tier nothing can route around: no spotify release
+      # means no album, no track number and no date. measured on a full pass,
+      # spotify starts returning 429 around 60 tracks in, so it gets more
+      # attempts than the default before a track is given up on.
+      retries=5,
     )
     self._auth_client = httpx.Client(timeout=self._source.timeout, transport=transport)
 

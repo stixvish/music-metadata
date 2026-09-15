@@ -222,3 +222,54 @@ def test_a_reader_is_not_blocked_by_an_open_writer(tmp_path):
     writer.put_file(path="a.aiff", audio_md5="x", duration_s=1.0, isrc="A")
     with Store.open(path) as reader:
       assert len(reader.query("SELECT * FROM files")) == 1
+
+
+def test_a_database_missing_a_later_column_is_migrated(tmp_path):
+  """`CREATE TABLE IF NOT EXISTS` does nothing to an existing table, so a
+  sidecar created before a column was added keeps the old shape and every read
+  of that column raises. this is what crashed a full-library `apply`."""
+  import sqlite3
+
+  path = tmp_path / "old.sqlite"
+  conn = sqlite3.connect(path)
+  conn.execute(
+    "CREATE TABLE artwork (isrc TEXT PRIMARY KEY, source_release TEXT, "
+    "url_template TEXT, width INTEGER, sha256 TEXT, local_path TEXT)"
+  )
+  conn.commit()
+  conn.close()
+
+  with Store.open(path) as store:
+    columns = {r[1] for r in store.conn.execute("PRAGMA table_info(artwork)")}
+
+  assert "candidate" in columns
+
+
+def test_migrating_preserves_existing_rows(tmp_path):
+  import sqlite3
+
+  path = tmp_path / "old.sqlite"
+  conn = sqlite3.connect(path)
+  conn.execute(
+    "CREATE TABLE artwork (isrc TEXT PRIMARY KEY, source_release TEXT, "
+    "url_template TEXT, width INTEGER, sha256 TEXT, local_path TEXT)"
+  )
+  conn.execute("INSERT INTO artwork VALUES ('A', 'Album', 'url', 3000, 'sha', 'p')")
+  conn.commit()
+  conn.close()
+
+  with Store.open(path) as store:
+    rows = store.query("SELECT * FROM artwork")
+
+  assert len(rows) == 1
+  assert rows[0]["candidate"] is None
+
+
+def test_migrating_is_idempotent(tmp_path):
+  path = tmp_path / "s.sqlite"
+  with Store.open(path):
+    pass
+  with Store.open(path) as store:
+    columns = {r[1] for r in store.conn.execute("PRAGMA table_info(artwork)")}
+
+  assert "candidate" in columns
