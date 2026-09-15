@@ -3,9 +3,11 @@ import pytest
 from music_metadata.dedup import (
   DuplicateClass,
   TrackFile,
+  find_cross_format_duplicates,
   find_duplicates,
   find_identical_audio,
   isrc_describes_file,
+  preference_key,
 )
 
 
@@ -136,3 +138,112 @@ def test_nothing_to_compare_is_not_evidence_against_the_isrc():
 
 def test_a_zero_local_duration_does_not_strip_the_isrc():
   assert isrc_describes_file(0.0, 300.0) is True
+
+
+# --- class D: the same recording arriving in two formats ---------------------
+# measured on the operator's library: a beatport .wav and a youtube-derived
+# .aiff of the same track share a sample-exact duration (192.229365s) but
+# **neither** an audio hash nor an ISRC — the wav carries no ISRC at all. so
+# class D is matched on duration plus title, and is never automatic.
+
+
+def test_the_measured_cross_format_pair_is_found():
+  """the real files this class exists for."""
+  files = [
+    f(
+      "/m/beatport/jUdAh, XXXTENTACION, Rio Santana, Andrez Babii"
+      " - I don_t even speak spanish lol (Original Mix).wav",
+      md5="db00b698",
+      duration=192.229365,
+      isrc=None,
+    ),
+    f(
+      "/m/library/XXXTENTACION - I don't even speak spanish lol"
+      " (ft. Rio Santana, Judah & Andrez Babii).aiff",
+      md5="bae5aa52",
+      duration=192.229365,
+      isrc="USUG11800451",
+    ),
+  ]
+  groups = find_cross_format_duplicates(files)
+
+  assert len(groups) == 1
+  assert groups[0].kind is DuplicateClass.PROBABLE_CROSS_FORMAT
+  assert not groups[0].auto_resolvable, "class D is never automatic"
+
+
+def test_the_wav_is_the_suggested_keep():
+  """a store master outranks a youtube rip; the operator still confirms."""
+  wav = f("/m/beatport/artist - song.wav", md5="a", duration=192.229365, isrc=None)
+  aiff = f("/m/library/artist - song.aiff", md5="b", duration=192.229365, isrc="X")
+  groups = find_cross_format_duplicates([aiff, wav])
+
+  assert groups[0].suggested_keep.path.endswith(".wav")
+
+
+def test_the_same_duration_with_unrelated_titles_is_not_a_duplicate():
+  """measured: 22 exact-duration collisions in 1,494 files, mostly unrelated.
+
+  youtube-sourced files land on round durations, so `159.000000` collides
+  readily. the title check is what makes the duration signal usable.
+  """
+  files = [
+    f("/m/library/Fixupboy - Problems.aiff", md5="a", duration=159.0, isrc="A"),
+    f("/m/library/NAV - Good For It.aiff", md5="b", duration=159.0, isrc="B"),
+  ]
+
+  assert find_cross_format_duplicates(files) == []
+
+
+def test_a_different_duration_is_never_a_cross_format_duplicate():
+  """an extended mix is a different recording, however alike the titles read."""
+  files = [
+    f("/m/beatport/artist - song (Extended).wav", md5="a", duration=300.0, isrc=None),
+    f("/m/library/artist - song.aiff", md5="b", duration=192.0, isrc="X"),
+  ]
+
+  assert find_cross_format_duplicates(files) == []
+
+
+def test_byte_identical_files_are_class_a_not_class_d():
+  """class A already covers them, and it is the automatic one."""
+  files = [
+    f("/m/library/song.aiff", md5="same", duration=192.0, isrc="X"),
+    f("/m/library/song (2).aiff", md5="same", duration=192.0, isrc="X"),
+  ]
+
+  assert find_cross_format_duplicates(files) == []
+
+
+# --- which copy survives -----------------------------------------------------
+
+
+def test_the_redownload_suffix_loses_to_the_original():
+  """`CHICA 305 (2).aiff` sorts *ahead* of `CHICA 305.aiff` (space < dot).
+
+  so taking the first by path would systematically keep every re-download and
+  drop every original — the opposite of what the operator wants.
+  """
+  group = find_identical_audio(
+    [
+      f("/m/library/John Summit & Feid - CHICA 305 (2).aiff", md5="same"),
+      f("/m/library/John Summit & Feid - CHICA 305.aiff", md5="same"),
+    ]
+  )[0]
+
+  assert group.keep.path.endswith("CHICA 305.aiff")
+  assert group.quarantine[0].path.endswith("(2).aiff")
+
+
+def test_a_store_master_outranks_a_youtube_rip():
+  assert preference_key("/m/beatport/x.wav") < preference_key("/m/library/x.aiff")
+
+
+def test_wav_outranks_aiff_within_one_folder():
+  assert preference_key("/m/library/x.wav") < preference_key("/m/library/x.aiff")
+
+
+def test_a_bare_number_in_a_title_is_not_a_redownload_suffix():
+  """`(2)` only counts at the very end, after a space."""
+  assert preference_key("/m/library/Song (2) Live.aiff")[2] == 0
+  assert preference_key("/m/library/Song (2).aiff")[2] == 1

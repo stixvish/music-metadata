@@ -1343,6 +1343,46 @@ reached.
 or below it a server is throttling and waiting is correct; above it a server has
 cut us off and only stopping is.
 
+**F57 — the same recording acquired twice in different formats is invisible to
+both existing duplicate tests.** measured 2026-09-14 on the operator's own
+files:
+
+```text
+beatport/…I don_t even speak spanish lol (Original Mix).wav
+  pcm_s16le  192.229365s  md5 db00b698…  isrc = none
+library/XXXTENTACION - I don't even speak spanish lol (ft. …).aiff
+  pcm_s16be  192.229365s  md5 bae5aa52…  isrc = USUG11800451
+```
+
+**the duration agrees to the microsecond and nothing else does.** the hashes
+differ because the library copy is youtube-sourced — lossy decoded to PCM —
+so it is not the same master; re-hashing both normalised to `s16le` confirms
+the samples genuinely differ, so this is not an endianness artefact. and §11a's
+other key is unavailable: **the store `.wav` carries no ISRC at all**.
+
+so class D matches on **duration plus title**, and is **never automatic**. the
+duration signal alone is not safe: 22 exact-duration collision groups were
+measured across 1,494 files, and most are unrelated tracks sharing a round
+youtube duration (`159.000000`, `192.000000`). the title check separates them
+cleanly — the real pair scores 12/12 shared words, the nearest false positive
+scores 0.
+
+running it over the library plus `beatport/` found **2 class-D groups and no
+false positives**: the pair above, and `Emotional Oranges - Call It Off` against
+its own `(ft. JAEHYUN)` copy at 216.933333s.
+
+**two consequences beyond the class itself.**
+
+first, **`apply` was writing both sides of every class-A pair**, which would
+have failed G11 ("no two output files share an audio md5") on the three known
+byte-identical pairs. it now emits one copy and reports the other.
+
+second, **which copy survives cannot be decided by path order**. `CHICA 305
+(2).aiff` sorts _ahead_ of `CHICA 305.aiff`, because a space precedes a dot —
+so first-by-path would have kept every re-download and dropped every original.
+`preference_key` ranks store over rip, lossless container first, and an
+unsuffixed name over an F39 `(2)` re-download.
+
 **F8 — rate limits are gentler in practice than documented.**
 published Starter is 6 req/min ([musicfetch.io](https://musicfetch.io/) pricing,
 checked 2026-09-14). measured: **20 sequential requests at 1 req/s, all HTTP

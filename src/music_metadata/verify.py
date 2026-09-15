@@ -18,7 +18,9 @@ from dataclasses import dataclass, field
 
 from music_metadata.dedup import (
   Duplicate,
+  DuplicateClass,
   TrackFile,
+  find_cross_format_duplicates,
   find_duplicates,
   find_identical_audio,
 )
@@ -297,8 +299,12 @@ def duplicate_report(
   Returns:
     The duplicate groups and a summarising result.
   """
-  duplicates = find_duplicates(files)
+  # class D is found separately because it shares no key with the others: the
+  # measured pair has different audio *and* only one of the two carries an
+  # ISRC, so neither `find_duplicates` nor the hash can reach it.
+  duplicates = find_duplicates(files) + find_cross_format_duplicates(files)
   automatic = sum(1 for d in duplicates if d.auto_resolvable)
+  cross = sum(1 for d in duplicates if d.kind is DuplicateClass.PROBABLE_CROSS_FORMAT)
   manual = len(duplicates) - automatic
   return (
     duplicates,
@@ -307,6 +313,9 @@ def duplicate_report(
       passed=True,
       measured=f"{len(duplicates)} groups",
       target="reported",
-      detail=f"{automatic} auto-resolvable (class A), {manual} need review (class B)",
+      detail=(
+        f"{automatic} auto-resolvable (class A), {manual} need review "
+        f"(of which {cross} probable cross-format, class D)"
+      ),
     ),
   )

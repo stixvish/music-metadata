@@ -152,15 +152,29 @@ def probe_file(path: Path) -> ProbedFile:
   )
 
 
-def probe_tree(root: Path) -> Iterator[ProbedFile]:
-  """Probe every audio file under `root`, in sorted path order.
+def probe_tree(*roots: Path) -> Iterator[ProbedFile]:
+  """Probe every audio file under each root, in sorted path order.
+
+  Several roots are supported because the operator's tracks arrive from more
+  than one place — a store download and a youtube rip of the same recording sit
+  in different folders, and §11a cannot compare what it never saw.
 
   Args:
-    root: the directory to walk.
+    *roots: the directories to walk. A root that does not exist is skipped, so
+      an optional folder need not be created to be named.
 
   Yields:
-    One `ProbedFile` per audio file found.
+    One `ProbedFile` per audio file found. Each path is yielded once even if
+    the roots overlap or repeat.
   """
-  for path in sorted(root.rglob("*")):
-    if path.is_file() and path.suffix.lower() in _AUDIO_SUFFIXES:
-      yield probe_file(path)
+  seen: set[Path] = set()
+  for root in roots:
+    if not root.is_dir():
+      continue
+    for path in sorted(root.rglob("*")):
+      resolved = path.resolve()
+      if resolved in seen:
+        continue
+      if path.is_file() and path.suffix.lower() in _AUDIO_SUFFIXES:
+        seen.add(resolved)
+        yield probe_file(path)

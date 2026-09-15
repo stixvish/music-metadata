@@ -131,6 +131,45 @@ the date is **not** the chosen album's date. it is the earliest across all 34
 releases the ISRC appears on (F33) — the single preceded the album by two
 months, and both facts are kept.
 
+## what gets scanned, and what comes out
+
+The pipeline reads from several folders and writes one output tree:
+
+```text
+~/Music/library     ~/Music/beatport     ~/Music/soundcloud
+        \                  |                     /
+         \                 v                    /
+                    ~/Music/tagged
+```
+
+`_Serato_`, `rekordbox` and `PioneerDJ` are **never scanned** — they are
+another tool's data. Override with `--library A B C`.
+
+Output filenames are rebuilt from the resolved tags and **lowercased**:
+
+```text
+XXXTENTACION - I don't even speak spanish lol (ft. …).aiff
+  -> xxxtentacion - i don't even speak spanish lol (ft. …).aiff
+```
+
+macOS is case-insensitive, so lowercasing means a later fix to an artist's
+capitalisation never renames the file — and never costs a relink in Rekordbox
+for a track already imported. The extension is carried through unchanged; audio
+is copied, never transcoded.
+
+## duplicate handling
+
+Three byte-identical pairs exist in the library. `apply` writes **one** copy of
+each and reports the other, so G11 ("no two output files share an audio md5")
+holds. The source tree is never touched.
+
+A fourth kind is harder: the same recording acquired twice in different
+formats — a Beatport `.wav` and a YouTube-derived `.aiff`. Their audio hashes
+differ (one has been through a lossy step) and the store copy often has no
+ISRC, so both of the usual tests miss it. These are matched on duration plus
+title and **always go to the review queue** — never auto-removed, because the
+duration signal alone produces false positives.
+
 ## resuming a run
 
 `resolve` caches every source's raw response separately, so a pass that stops

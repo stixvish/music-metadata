@@ -24,8 +24,8 @@ from music_metadata.arbitrate import Resolved, arbitrate
 from music_metadata.artwork import Artwork, resolve_artwork
 from music_metadata.config import DEFAULT_SIDECAR, get, load_env, require
 from music_metadata.credit import resolve_credit
-from music_metadata.dedup import TrackFile
-from music_metadata.naming import split_title
+from music_metadata.dedup import TrackFile, preference_key
+from music_metadata.naming import output_filename, split_title
 from music_metadata.output import Level, emit
 from music_metadata.probe import ProbedFile, probe_tree
 from music_metadata.release import ReleaseCandidate, choose_release
@@ -60,7 +60,16 @@ from music_metadata.verify import (
   gate_g11_no_duplicates,
 )
 
-DEFAULT_LIBRARY = Path.home() / "Music/library"
+# **the operator's tracks arrive from more than one place.** a store download
+# and a youtube rip of the same recording sit in different folders, and §11a
+# cannot compare what it never saw — the measured cross-format pair was missed
+# for exactly this reason. app-managed folders (_Serato_, rekordbox, PioneerDJ)
+# are deliberately absent: those are another tool's data (§9).
+DEFAULT_LIBRARY = (
+  Path.home() / "Music/library",
+  Path.home() / "Music/beatport",
+  Path.home() / "Music/soundcloud",
+)
 
 # a single failure is a track to retry later; this many in a row means the
 # service is refusing us and continuing just burns quota against a wall.
@@ -279,7 +288,7 @@ def cmd_probe(args: argparse.Namespace) -> int:
   """
   with Store.open(args.sidecar) as store:
     total = with_isrc = 0
-    for probed in probe_tree(args.library):
+    for probed in probe_tree(*args.library):
       store.put_file(
         path=str(probed.path),
         audio_md5=probed.audio_md5,
@@ -564,7 +573,7 @@ def cmd_diff(args: argparse.Namespace) -> int:
     # the ui reads this table rather than re-probing the library (§14).
     store.clear_proposed()
     shown = 0
-    for probed in probe_tree(args.library):
+    for probed in probe_tree(*args.library):
       if args.limit and shown >= args.limit:
         break
       resolved = _resolved_for(store, probed)
@@ -590,6 +599,29 @@ def cmd_diff(args: argparse.Namespace) -> int:
   return 0
 
 
+def _unique_name(name: str, taken: set[str]) -> str:
+  """Disambiguate an output name that is already in use.
+
+  Two different recordings can legitimately render to one name — a track and
+  its own radio edit, say. Overwriting would silently lose one, so the second
+  gets a numbered suffix.
+
+  Args:
+    name: the preferred filename.
+    taken: names already written this run.
+
+  Returns:
+    `name`, or `name` with the lowest free ` (n)` suffix before the extension.
+  """
+  if name not in taken:
+    return name
+  stem, _, suffix = name.rpartition(".")
+  counter = 2
+  while f"{stem} ({counter}).{suffix}" in taken:
+    counter += 1
+  return f"{stem} ({counter}).{suffix}"
+
+
 def cmd_apply(args: argparse.Namespace) -> int:
   """Write tagged copies to the output tree. The source is never touched.
 
@@ -602,7 +634,22 @@ def cmd_apply(args: argparse.Namespace) -> int:
   args.out.mkdir(parents=True, exist_ok=True)
   with Store.open(args.sidecar) as store:
     written = 0
-    for probed in probe_tree(args.library):
+    # **G11 asserts no two output files share an audio md5.** the source tree
+    # holds three byte-identical pairs (§11a class A), and copying both sides
+    # of each would fail the gate the run is trying to pass. the source is
+    # never touched (§9) — the duplicate is simply not emitted, and is reported.
+    emitted_audio: dict[str, str] = {}
+    # two different recordings can still resolve to one name, so names are
+    # tracked separately from audio and disambiguated rather than overwritten.
+    used_names: set[str] = set()
+    skipped_duplicates = 0
+    # **emission order decides which copy of a duplicate survives**, so it is
+    # ranked rather than left to the filesystem: `CHICA 305 (2).aiff` sorts
+    # ahead of `CHICA 305.aiff`, and taking files as they came would keep every
+    # re-download and drop every original.
+    for probed in sorted(
+      probe_tree(*args.library), key=lambda f: preference_key(str(f.path))
+    ):
       if args.limit and written >= args.limit:
         break
       resolved = _resolved_for(store, probed)
@@ -632,40 +679,73 @@ def cmd_apply(args: argparse.Namespace) -> int:
             source=resolved.provenance.get("artist", ""),
           )
 
-      # §9: emit a fully tagged copy, leave the source untouched.
-      destination = args.out / probed.path.name
+      if probed.audio_md5 in emitted_audio:
+        skipped_duplicates += 1
+        emit(
+          f"skipped {probed.path.name} — same audio as "
+          f"{emitted_audio[probed.audio_md5]} (§11a class A)",
+          level=Level.WARN,
+        )
+        continue
+
+      # §9: emit a fully tagged copy, leave the source untouched. the name is
+      # rebuilt from the resolved tags rather than carried over, so the file on
+      # disk agrees with what is written inside it.
+      name = output_filename(
+        resolved.tags.title or "",
+        resolved.tags.artist or "",
+        probed.path.suffix,
+      )
+      name = _unique_name(name, used_names)
+      used_names.add(name)
+      destination = args.out / name
       shutil.copy2(probed.path, destination)
       write_tags(destination, resolved.tags)
+      emitted_audio[probed.audio_md5] = name
       written += 1
 
       emit(f"wrote {destination.name}")
 
     emit(f"wrote {written} tagged copies to {args.out}")
+    if skipped_duplicates:
+      emit(
+        f"skipped {skipped_duplicates} byte-identical duplicate(s) — "
+        f"the source tree still holds them (§9)",
+        level=Level.WARN,
+      )
     emit(f"wrote {args.map} ({write_map(store, args.map)} entries)")
     for flag, count in store.review_counts().items():
       emit(f"flagged {count} × {flag}")
   return 0
 
 
-def tree_checksum(root: Path) -> str:
-  """One hash over every audio file in a tree, for G4.
+def tree_checksum(*roots: Path) -> str:
+  """One hash over every audio file in the source trees, for G4.
 
   §8: the source tree's bytes are unchanged **asserted by checksum, not by
   inspection**. hashing the container rather than the decoded audio is right
   here — a tag write changes the container, which is exactly what must not
   happen to the source.
 
+  Every scanned root is covered, since every one of them is a source tree the
+  run promises not to touch.
+
   Args:
-    root: the directory to hash.
+    *roots: the directories to hash. A missing root contributes nothing.
 
   Returns:
-    A hex digest over every audio file, in sorted path order.
+    A hex digest over every audio file, in sorted path order. The full path is
+    hashed rather than the bare name, so two roots holding same-named files
+    stay distinguishable.
   """
   digest = hashlib.sha256()
-  for path in sorted(root.rglob("*")):
-    if path.is_file() and path.suffix.lower() in {".aiff", ".aif", ".wav"}:
-      digest.update(path.name.encode())
-      digest.update(hashlib.sha256(path.read_bytes()).digest())
+  for root in roots:
+    if not root.is_dir():
+      continue
+    for path in sorted(root.rglob("*")):
+      if path.is_file() and path.suffix.lower() in {".aiff", ".aif", ".wav"}:
+        digest.update(str(path).encode())
+        digest.update(hashlib.sha256(path.read_bytes()).digest())
   return digest.hexdigest()
 
 
@@ -745,7 +825,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
     report.gates.append(gate_g2_completeness(complete, len(output)))
     if args.checksum_before:
       report.gates.append(
-        gate_g4_non_destruction(args.checksum_before, tree_checksum(args.library))
+        gate_g4_non_destruction(args.checksum_before, tree_checksum(*args.library))
       )
     report.gates.append(gate_g5_artwork(artwork_present, counts.get("no-artwork", 0)))
     report.gates.append(gate_g6_credit(agree=agree, disagree=disagree))
@@ -828,7 +908,7 @@ def cmd_checksum(args: argparse.Namespace) -> int:
   Returns:
     Process exit code.
   """
-  emit(tree_checksum(args.library))
+  emit(tree_checksum(*args.library))
   return 0
 
 
@@ -859,7 +939,13 @@ def build_parser() -> argparse.ArgumentParser:
   sub = parser.add_subparsers(dest="command", required=True)
 
   probe = sub.add_parser("probe", help="local tag survey, no network")
-  probe.add_argument("--library", type=Path, default=DEFAULT_LIBRARY)
+  probe.add_argument(
+    "--library",
+    type=Path,
+    nargs="+",
+    default=list(DEFAULT_LIBRARY),
+    help="folders to scan; repeatable",
+  )
   probe.set_defaults(func=cmd_probe)
 
   resolve = sub.add_parser("resolve", help="resolve identities into the sidecar")
@@ -872,19 +958,37 @@ def build_parser() -> argparse.ArgumentParser:
   resolve.set_defaults(func=cmd_resolve)
 
   diff = sub.add_parser("diff", help="proposed changes, old to new")
-  diff.add_argument("--library", type=Path, default=DEFAULT_LIBRARY)
+  diff.add_argument(
+    "--library",
+    type=Path,
+    nargs="+",
+    default=list(DEFAULT_LIBRARY),
+    help="folders to scan; repeatable",
+  )
   diff.add_argument("--limit", type=int, default=0)
   diff.set_defaults(func=cmd_diff)
 
   apply_ = sub.add_parser("apply", help="write tagged copies")
-  apply_.add_argument("--library", type=Path, default=DEFAULT_LIBRARY)
+  apply_.add_argument(
+    "--library",
+    type=Path,
+    nargs="+",
+    default=list(DEFAULT_LIBRARY),
+    help="folders to scan; repeatable",
+  )
   apply_.add_argument("--out", type=Path, required=True)
   apply_.add_argument("--map", type=Path, default=Path("library.toml"))
   apply_.add_argument("--limit", type=int, default=0)
   apply_.set_defaults(func=cmd_apply)
 
   verify = sub.add_parser("verify", help="assert the gates over an output tree")
-  verify.add_argument("--library", type=Path, default=DEFAULT_LIBRARY)
+  verify.add_argument(
+    "--library",
+    type=Path,
+    nargs="+",
+    default=list(DEFAULT_LIBRARY),
+    help="folders to scan; repeatable",
+  )
   verify.add_argument("--out", type=Path, required=True)
   verify.add_argument(
     "--checksum-before",
@@ -893,7 +997,13 @@ def build_parser() -> argparse.ArgumentParser:
   verify.set_defaults(func=cmd_verify)
 
   checksum = sub.add_parser("checksum", help="hash a tree, for G4")
-  checksum.add_argument("--library", type=Path, default=DEFAULT_LIBRARY)
+  checksum.add_argument(
+    "--library",
+    type=Path,
+    nargs="+",
+    default=list(DEFAULT_LIBRARY),
+    help="folders to scan; repeatable",
+  )
   checksum.set_defaults(func=cmd_checksum)
 
   map_ = sub.add_parser("map", help="render the map for scanning")

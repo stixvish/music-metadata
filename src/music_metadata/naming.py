@@ -234,3 +234,42 @@ def split_filename(stem: str) -> tuple[str, str]:
   if not sep:
     return ("", stem.strip())
   return (artist.strip(), title.strip())
+
+
+# characters that genuinely cannot appear in a macOS filename, plus `:` —
+# legal in HFS+ but rendered as `/` by Finder, which is worse than dropping it.
+#
+# **`*` and `?` are deliberately kept.** they are valid on macOS, and `*NSYNC`
+# is the band's actual name: stripping punctuation that belongs to an artist
+# would quietly rename them. this is a filesystem safety check, not a style
+# preference.
+_UNSAFE = re.compile(r'[/\\:<>|"\x00-\x1f]')
+_COLLAPSE = re.compile(r"\s+")
+
+
+def output_filename(title: str, artist: str, suffix: str) -> str:
+  """Build the output file's name from the resolved tags.
+
+  **The name is lowercased on purpose.** macOS is case-insensitive, so a later
+  correction to an artist's capitalisation would otherwise rename the file —
+  and rekordbox tracks files by path, so a rename costs a relink on a track the
+  operator has already imported. Lowercasing means casing changes never move
+  anything.
+
+  The audio is copied, never transcoded (§9), so the extension is carried
+  through unchanged rather than normalised.
+
+  Args:
+    title: the resolved title, already rendered to §7a's shape.
+    artist: the resolved track artist.
+    suffix: the source file's extension, including the dot.
+
+  Returns:
+    A filename safe to write into the output directory. Never empty, never a
+    path, and never starting with a dot.
+  """
+  parts = [p for p in (artist.strip(), title.strip()) if p]
+  stem = " - ".join(parts) if parts else "untitled"
+  stem = _UNSAFE.sub("", stem)
+  stem = _COLLAPSE.sub(" ", stem).strip(" .")
+  return f"{(stem or 'untitled').lower()}{suffix.lower()}"
