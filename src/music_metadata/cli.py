@@ -175,6 +175,9 @@ def _resolved_for(
   return arbitrate(
     probed,
     _candidates_for(store, probed),
+    searched=store.get_raw(probed.isrc, "spotify") is not None
+    if probed.isrc
+    else False,
     musicbrainz=credit,
     work=work,
     itunes=itunes_release,
@@ -514,8 +517,16 @@ def cmd_resolve(args: argparse.Namespace) -> int:
                 f"{album_artist} {chosen.album_name}".strip()
               )
               store.put_raw(isrc, "itunes", album_hits.raw)
+              # **candidate C needs the image spotify already gave us** (§7c).
+              # it was implemented and never supplied, so a track itunes could
+              # not find was flagged `no-artwork` while a verified 640px cover
+              # sat unused in the cached payload.
               art = resolve_artwork(
-                itunes, chosen.album_name, album_artist, chosen.track_name
+                itunes,
+                chosen.album_name,
+                album_artist,
+                chosen.track_name,
+                spotify_image_url=chosen.image_url,
               )
             except SourceError as exc:
               emit(f"  itunes unavailable for {isrc}: {exc}", level=Level.WARN)
