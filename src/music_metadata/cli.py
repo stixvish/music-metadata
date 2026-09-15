@@ -649,6 +649,19 @@ def cmd_resolve(args: argparse.Namespace) -> int:
       emit(f"spotify failed on {spotify_errors} track(s)", level=Level.WARN)
     emit(f"musicbrainz {mb_hits} found, {mb_misses} missing, {mb_errors} unavailable")
     emit(f"artwork {art_hits} verified, {art_misses} unverified (G5)")
+    if beatport is not None and beatport.unauthorised:
+      emit(
+        f"beatport rejected {beatport.unauthorised} request(s) as unauthenticated "
+        f"— every one of those reads as 'not on beatport'. re-export the cookie: "
+        f"`uv run python tools/bp_cookies.py export`",
+        level=Level.ERROR,
+      )
+    elif beatport is not None and beatport.failures:
+      emit(
+        f"beatport failed on {beatport.failures} request(s); those tracks show "
+        f"no listing whether or not one exists",
+        level=Level.WARN,
+      )
     if beatport is not None:
       emit(f"beatport {bp_hits} matched, {bp_misses} not listed")
     else:
