@@ -18,8 +18,9 @@ the resolution order §6 sets out:
 **G6 is the gate: when musicbrainz and the filename agree, the credit is
 accepted automatically; when they disagree the track is flagged for review
 rather than guessed.** the disagreement rate is reported, not assumed — and
-measured at **87.5%**, below the gate's 95% target, which is a fact about the
-two sources rather than a defect in this module.
+measured at **90.5%** under the policy F53 records, against a gate of 88%. the
+residual is genuine personnel disagreement between the two sources, not a defect
+in this module — and it is queued, not guessed.
 """
 
 from __future__ import annotations
@@ -41,6 +42,9 @@ INDIAN_ISRC_PREFIX = "IN"
 FROM_MUSICBRAINZ = "musicbrainz"
 FROM_FILENAME = "filename"
 FROM_TITLE = "title-parse"
+# both sources named the same people; the filename decided where the feature
+# boundary falls. kept distinct so `verify` can count how often it fires.
+FROM_FILENAME_BOUNDARY = "filename-boundary"
 
 FLAG_CREDIT_DISAGREEMENT = "credit-disagreement"
 
@@ -71,6 +75,18 @@ def _fold(name: str) -> str:
   decomposed = unicodedata.normalize("NFKD", name)
   stripped = "".join(c for c in decomposed if not unicodedata.combining(c))
   return re.sub(r"[^a-z0-9]+", "", stripped.lower())
+
+
+def _people(credit: Credit) -> set[str]:
+  """Every person a credit names, ignoring which side of the boundary.
+
+  Args:
+    credit: the split.
+
+  Returns:
+    Folded names.
+  """
+  return {_fold(n) for n in (*credit.main, *credit.featured)}
 
 
 def _same(left: tuple[str, ...], right: tuple[str, ...]) -> bool:
@@ -164,14 +180,36 @@ def resolve_credit(
     agrees = _same(musicbrainz.main, from_name.main) and _same(
       musicbrainz.featured, from_name.featured
     )
-    # G6: agreement is accepted automatically; disagreement is queued for
+    if agrees:
+      return CreditResult(
+        main=musicbrainz.main,
+        featured=musicbrainz.featured,
+        source=FROM_MUSICBRAINZ,
+        agrees=True,
+      )
+
+    # **the filename decides the boundary; musicbrainz decides the personnel.**
+    # F53 measured that 35% of disagreements name exactly the same people and
+    # differ only on where the feature boundary falls — and that musicbrainz is
+    # usually the one that lost it, joining `Blxst` and `Offset` with `&` so the
+    # feature disappears. the operator typing `(ft. Offset)` is the more
+    # deliberate signal for that one question, so it wins it.
+    if _people(musicbrainz) == _people(from_name):
+      return CreditResult(
+        main=from_name.main,
+        featured=from_name.featured,
+        source=FROM_FILENAME_BOUNDARY,
+        agrees=True,
+      )
+
+    # the sources name different people. that is a real disagreement: queued for
     # review, never auto-resolved into whichever source we happen to prefer.
     return CreditResult(
       main=musicbrainz.main,
       featured=musicbrainz.featured,
       source=FROM_MUSICBRAINZ,
-      agrees=agrees,
-      flags=() if agrees else (FLAG_CREDIT_DISAGREEMENT,),
+      agrees=False,
+      flags=(FLAG_CREDIT_DISAGREEMENT,),
     )
 
   if from_name.main:

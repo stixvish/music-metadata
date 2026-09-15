@@ -3,6 +3,7 @@ import pytest
 from music_metadata.credit import (
   FLAG_CREDIT_DISAGREEMENT,
   FROM_FILENAME,
+  FROM_FILENAME_BOUNDARY,
   FROM_MUSICBRAINZ,
   credit_from_filename,
   in_indian_scope,
@@ -191,3 +192,68 @@ def test_a_genuinely_different_name_is_still_a_disagreement():
   )
 
   assert got.agrees is False
+
+
+# --- F53: the filename decides the boundary, musicbrainz decides the people --
+
+
+def test_the_filename_wins_when_musicbrainz_flattened_the_feature():
+  """F53, 13 measured cases: musicbrainz joins with `&` and the feature is lost.
+
+  `Blxst - Risk Taker (ft. Offset)` — musicbrainz credits both as main. the
+  operator typed the boundary deliberately, so it stands.
+  """
+  got = resolve_credit(
+    "Blxst - Risk Taker (ft. Offset)",
+    musicbrainz=Credit(main=("Blxst", "Offset"), featured=()),
+  )
+
+  assert got.main == ("Blxst",)
+  assert got.featured == ("Offset",)
+  assert got.source == FROM_FILENAME_BOUNDARY
+  assert got.flags == ()
+
+
+def test_a_boundary_correction_is_not_a_disagreement():
+  got = resolve_credit(
+    "All Time Low - Monsters (ft. blackbear)",
+    musicbrainz=Credit(main=("All Time Low", "blackbear"), featured=()),
+  )
+
+  assert got.agrees is True
+
+
+def test_different_personnel_is_still_flagged():
+  """F53, 8 measured cases: `Quango Rondo` vs `Quango Quango` is a real
+  disagreement and must not be auto-resolved by a boundary rule."""
+  got = resolve_credit(
+    "A Boogie Wit da Hoodie - Need a Best Friend (ft. Lil Quee & Quango Rondo)",
+    musicbrainz=Credit(
+      main=("A Boogie Wit da Hoodie",), featured=("Lil Quee", "Quango Quango")
+    ),
+  )
+
+  assert FLAG_CREDIT_DISAGREEMENT in got.flags
+  assert got.source == FROM_MUSICBRAINZ
+
+
+def test_musicbrainz_still_decides_personnel_on_a_real_disagreement():
+  """19 measured cases where musicbrainz is missing an artist entirely stay
+  flagged: the operator decides those, not a rule."""
+  got = resolve_credit(
+    "A Boogie Wit da Hoodie - Chanelly (ft. Don Q)",
+    musicbrainz=Credit(main=("A Boogie Wit da Hoodie",), featured=()),
+  )
+
+  assert got.agrees is False
+  assert got.main == ("A Boogie Wit da Hoodie",)
+
+
+def test_extra_musicbrainz_artists_are_a_real_disagreement():
+  """7 measured cases where musicbrainz names co-producers the filename omits."""
+  got = resolve_credit(
+    "David Guetta - Sound of Letting Go (ft. Chris Willis)",
+    musicbrainz=Credit(main=("David Guetta", "Tocadisco"), featured=("Chris Willis",)),
+  )
+
+  assert FLAG_CREDIT_DISAGREEMENT in got.flags
