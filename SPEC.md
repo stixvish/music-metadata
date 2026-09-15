@@ -1575,6 +1575,41 @@ SKIP  Becky Hill - My Heart Goes: USJI10000001 is 200s but the file is 149s
       (51s apart) — wrong track? (G10)
 ```
 
+**F63 — §7c's candidate C was implemented, unit-tested, and never supplied.**
+`resolve_artwork` takes `spotify_image_url` with a `None` default, and `resolve`
+called it without that argument. so the last link in the artwork chain could
+never fire: a track itunes could not find was flagged `no-artwork` while a
+verified 640px cover sat unused in its own cached spotify payload.
+
+```text
+24kGoldn & Lil Tecca — Prada     itunes: 0 results   spotify: 640x640 present
+24kGoldn — Checkers              itunes: 0 results   spotify: 640x640 present
+```
+
+both now resolve to `spotify-album-image` (89,813 and 160,597 bytes). the unit
+test for candidate C passed throughout — it tested the function, and the defect
+was in the caller.
+
+**this is the third instance of the same shape**, and it is worth naming: a
+capability built, tested in isolation, and never connected. `overrides` was
+accepted by `arbitrate` and passed by nothing; `service_ids` had a writer and no
+caller (F61); candidate C had an argument and no argument. **a unit test on the
+component cannot see it.** what catches it is asserting the wired behaviour —
+that a track with no itunes match still gets artwork — rather than that the
+function returns artwork when handed a URL.
+
+**F64 — "we never asked" was being reported as "there is nothing".** the quota
+stop (F56) left every track past the cut-off with an empty candidate list, and
+an empty list raised `no-release` — rendered as "no release found". the operator
+reasonably read that as spotify failing on `The Business` and `CHICA 305`, when
+in fact the pass stopped alphabetically at `A Boogie Wit da Hoodie — Luv Is Art`
+and never reached them.
+
+the two states are now distinct: `not-searched` when no payload is cached,
+`no-release` only when one is and holds nothing. **an empty result is evidence;
+an absent result is not**, and a gate that conflates them reports a failure the
+operator then goes looking for.
+
 **F8 — rate limits are gentler in practice than documented.**
 published Starter is 6 req/min ([musicfetch.io](https://musicfetch.io/) pricing,
 checked 2026-09-14). measured: **20 sequential requests at 1 req/s, all HTTP
