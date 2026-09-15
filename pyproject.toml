@@ -114,5 +114,6 @@ include = [
   "src/music_metadata/naming.py",
   "src/music_metadata/credit.py",
   "src/music_metadata/artwork.py",
+  "src/music_metadata/camelot.py",
 ]
 fail_under = 90

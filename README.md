@@ -15,22 +15,22 @@ verified master).
 
 ## status
 
-**milestone 3 of 6 — completeness.** every track now gets **artwork** from a
-verified release, plus genre and label. the artwork chain refuses to guess: a
-cover is embedded only when the release it came from is the release §7b chose,
-and a track with no verifying candidate keeps what it has and is flagged.
+**milestone 4 of 6 — beatport.** genre, BPM and key are wired in behind a
+pluggable token provider. **beatport is optional by construction** (`SPEC.md`
+§5): with no session cookie it contributes nothing, genre falls back to discogs
+and then itunes, and the run completes. that is verified, not assumed.
 
 | thing           | state                                                       |
 | --------------- | ----------------------------------------------------------- |
 | `probe`         | 1,494 files, 1,439 with ISRC — reproduces the baseline      |
-| `resolve`       | spotify · musicbrainz · itunes · discogs                    |
-| **artwork**     | verified chain at the album's own master, up to 3000²       |
-| **genre**       | discogs `styles`, falling back to itunes                    |
-| **label**       | discogs `labels[]`, plants and publishers excluded          |
+| `resolve`       | spotify · musicbrainz · itunes · discogs · beatport         |
+| **artwork**     | verified chain, at each album's master (up to 3000²)        |
+| **genre**       | beatport → discogs `styles` → itunes                        |
+| **label**       | beatport → discogs `labels[]`                               |
+| **BPM / key**   | beatport only, key in camelot — **needs a session cookie**  |
 | artist credit   | musicbrainz joinphrases, cross-checked against the filename |
 | G6 agreement    | **90.5%** measured on all 398 featured tracks (gate: 88%)   |
 | review queue    | flagged tracks in the browser, grouped by gate              |
-| **BPM, key**    | **not built** — beatport is M4                              |
 | **acquisition** | **not built** — tier 0 is M6                                |
 
 what is populated today: title, artist, album, album artist, release date, year,
@@ -39,6 +39,18 @@ label, artwork, and — where musicbrainz names the role — composer and
 lyricist. everything else is
 deliberately left empty rather than guessed: §7e's position on BPM, applied
 generally.
+
+**on BPM and key.** beatport is the only source in this stack that has them, so
+coverage is zero until a session cookie exists — and honestly zero rather than
+computed. §7e is explicit: rekordbox recomputes both during its own analysis and
+prefers its own values, so a guessed tag buys nothing and gets trusted anyway.
+key is written in **camelot** (`2A`, not `Eb Minor`), which is what rekordbox and
+serato display and what harmonic mixing actually uses.
+
+**enabling beatport.** export beatport.com cookies from chrome in Netscape
+format; `uv run python tools/bp_cookies.py path` prints where they go and
+`check` verifies they still mint a token. the session lasts about a month. with
+no cookie, `resolve` says so and carries on.
 
 **on artwork.** the danger is identity, not resolution: an image returned for a
 track is the cover of whichever release the matcher landed on, and that is a
@@ -90,6 +102,9 @@ uv run music-metadata probe
 # 2. resolve identities into the sidecar. spotify at 20 req/min,
 #    musicbrainz at 1 req/s.
 uv run music-metadata resolve --limit 20
+
+# ...or skip tier 3 deliberately. the pipeline completes either way.
+uv run music-metadata resolve --limit 20 --no-beatport
 
 # 3. see what would change, and which source supplied each field.
 uv run music-metadata diff --limit 5
@@ -168,10 +183,11 @@ uv run pytest -q
 green — see `CLAUDE.md`.
 
 ```sh
-uv run pytest -q           # 382 tests, no network
+uv run pytest -q           # 486 tests, no network
 uv run pytest -q -m live   # hits the real spotify api
 uv run pytest -q -m slow   # probes all 1,494 files against the measured baseline
 ```
 
-the pure modules — `release`, `naming`, `credit`, `artwork`, `output` — are held
-at 100% coverage with a 90% floor. they carry the decisions the spec argued hardest about.
+the pure modules — `release`, `naming`, `credit`, `artwork`, `camelot`,
+`output` — are held at 99% coverage with a 90% floor. they carry the decisions
+the spec argued hardest about.

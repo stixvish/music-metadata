@@ -250,46 +250,65 @@ branch `feat/artwork`
 
 branch `feat/beatport`
 
-- [ ] **4.1 `sources/bp_auth.py`** — pluggable `TokenProvider`.
+- [x] **4.1 `sources/bp_auth.py`** — pluggable `TokenProvider`.
       `CookieSessionProvider` now (F11: a month-long cookie mints 10-minute
       tokens); `OAuthClientProvider` reads `.env` when OQ-5 lands.
       **verify:** a token is minted and refreshed on expiry · a missing cookie
       degrades to "no beatport", never a crash.
-- [ ] **4.2 `sources/beatport.py`** — `?isrc=` as a fast path, then artist +
+- [x] **4.2 `sources/beatport.py`** — `?isrc=` as a fast path, then artist +
       name + mix-name search. F22: ISRC succeeds on originals and **fails on all 9
       `Blessings` remixes**.
       **verify:** an original resolves by ISRC · a remix resolves by search ·
       zero results is a normal outcome, not an error.
-- [ ] **4.3 `camelot.py`** — promote `tools/camelot.py` into `src/`; move its
+- [x] **4.3 `camelot.py`** — promote `tools/camelot.py` into `src/`; move its
       24-code table into `tests/`. an unparseable key returns `None` and `TKEY`
       is left empty (§7f).
       **verify:** all 24 codes unique and covered · the four published anchors
       (1A = A♭ minor, 1B = B major, 8A = A minor, 8B = C major) · enharmonics
       and case variants · garbage returns `None`.
-- [ ] **4.4 G3 duration split.** within ±5s → all fields transfer. outside ±5s →
+- [x] **4.4 G3 duration split.** within ±5s → all fields transfer. outside ±5s →
       **only** `genre`, `sub_genre`, `label` and remixer identity; `bpm`, `key`,
       `length` and beatport's `isrc` are **discarded**.
       **verify:** a >5s-apart match transfers genre but not bpm.
-- [ ] **4.5 G9 no cross-recording contamination.** the written ISRC always equals
+- [x] **4.5 G9 no cross-recording contamination.** the written ISRC always equals
       the file's own.
       **verify:** asserted in `verify`, and a test proves beatport's ISRC is
       never adopted.
-- [ ] **4.6 prove tier 3 is optional.** §5 claims beatport is the most likely
+- [x] **4.6 prove tier 3 is optional.** §5 claims beatport is the most likely
       component to break and the one nothing depends on. **test the claim.**
       **verify:** a run with beatport disabled completes green, with genre
       falling back to discogs and then itunes.
-- [ ] **4.7 update `README.md`.** document beatport setup (cookie provider, and
+- [x] **4.7 update `README.md`.** document beatport setup (cookie provider, and
       that it is **optional** — the pipeline completes without it), the camelot
       `TKEY` notation, and the **honest** BPM/key coverage from checkpoint 4.
 
-> ### checkpoint 4 — stop and review
+> ### checkpoint 4 — reviewed 2026-09-14
 >
-> G3 class fractions reported (same-recording vs different-edit vs no match). a
-> beatport-disabled run completes. BPM and key coverage stated **honestly** per
-> §7e — good for dance, poor for hip-hop, near-zero for indian repertoire, and
-> **left empty rather than guessed**.
-
----
+> **§5's central claim is verified: tier 3 is droppable.** with no beatport
+> cookie present — the real situation today — a full run completes, genre falls
+> back to discogs and then itunes, and BPM/key stay empty:
+>
+> ```text
+> warn   beatport: no session cookie, genre falls back to discogs/itunes
+> info   resolved 8 fetched · musicbrainz 8 found · artwork 7 verified
+> info   beatport skipped — genre from discogs/itunes
+> ```
+>
+> `resolve --no-beatport` does the same thing deliberately. every failure path
+> in `bp_auth` and `beatport` returns `None`, never an exception.
+>
+> **G3 class fractions are not yet measurable** — that needs a live cookie. the
+> split itself is exhaustively tested offline: within ±5s everything transfers;
+> outside it genre, label and remixer only, with bpm, key and beatport's ISRC
+> discarded (G9).
+>
+> **BPM/key coverage stated honestly: zero today.** beatport is the only source
+> in this stack that has them, and it is not authenticated. §7e's position
+> holds — an empty field is honest, a guessed one gets trusted.
+>
+> **blocked on:** `~/.config/musicpipeline/beatport-cookies.txt`. run
+> `uv run python tools/bp_cookies.py path` for where it goes and `check` to
+> verify it mints a token.
 
 ## M5 — gates, duplicates, and the full run
 
