@@ -1732,6 +1732,49 @@ the two states are now distinct: `not-searched` when no payload is cached,
 an absent result is not**, and a gate that conflates them reports a failure the
 operator then goes looking for.
 
+**F69 — beatport contributed nothing to the whole pass, and the pipeline
+reported that as "not on beatport".** the operator pushed back on the claim that
+hip-hop is simply absent from beatport — they have found `El Dorado (Deluxe)`
+and NAV's first album there. they were right, and the measurement is worse than
+a wrong genre:
+
+```text
+GET /v4/catalog/search/?q=24kGoldn         401  "Authentication credentials were not provided."
+GET /v4/catalog/tracks/?isrc=USQX92100617  401  same
+GET /v4/my/account/                        401  same
+GET /v4/auth/o/introspect/                 200  {"user_id": null, "username": ""}
+```
+
+**the token mints and is rejected.** it decodes as a well-formed, unexpired JWT
+for the right user:
+
+```json
+{
+  "sub": "stixvish",
+  "aud": "urn:bp:identity-service",
+  "scope": "app:prostore user:dj"
+}
+```
+
+but `introspect` resolves it to no user, so `api.beatport.com` does not accept
+an identity-service token as a catalog credential. **F15's "the official API is
+the same API; only the acquisition of the token differs" does not hold for this
+token**, and OQ-5 is therefore load-bearing rather than optional — the cookie
+path mints something the catalog API will not take.
+
+**the defect this exposes is ours, not beatport's.** §5 requires that tier 3
+failing cannot stop a run, and `_get` implements that as
+`except SourceError: return None`. that is correct and it is also why nobody
+noticed: **60 of 60 tracks recorded an empty payload, and "we asked and there is
+no listing" is indistinguishable from "we were never authenticated"** — the same
+conflation as F64, in a different place.
+
+failures are now counted and reported. a 401 says so, loudly, and names the fix;
+the run still completes, because §5's rule is right.
+
+**the beatport genre numbers in this document are therefore unmeasured**, not
+measured-as-zero. G3's class fractions cannot be reported until auth works.
+
 **F8 — rate limits are gentler in practice than documented.**
 published Starter is 6 req/min ([musicfetch.io](https://musicfetch.io/) pricing,
 checked 2026-09-14). measured: **20 sequential requests at 1 req/s, all HTTP
