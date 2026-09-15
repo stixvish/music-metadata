@@ -39,7 +39,7 @@ album    = "El Dorado (Deluxe)"
 isrc     = "USQX92103580"
 spotify  = "https://open.spotify.com/track/0GcwfjCaGemQyRXENm6OL8"
 itunes   = ""                                                      # not found
-beatport = ""                                                      # not found
+beatport = "https://www.beatport.com/track/prada/20882704"         # not found
 
 ["0a5d6f47f030429d6ef6e967f8137ece"]
 file     = "24kGoldn - A LOT TO LOSE.aiff"
