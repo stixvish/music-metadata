@@ -1,6 +1,13 @@
 import pytest
 
-from music_metadata.library_map import Entry, merge, read, render, write
+from music_metadata.library_map import (
+  Entry,
+  MapError,
+  merge,
+  read,
+  render,
+  write,
+)
 from music_metadata.store import Store
 
 MD5 = "446fd65a7c0be5bd83448b5a04bb7035"
@@ -175,3 +182,72 @@ def test_the_edit_still_holds_on_a_third_run(tmp_path, store):
   write(path, [third], store)
 
   assert read(path)[MD5]["album"] == "Mine"
+
+
+# --- §9b vs §11a: two files can share one md5 --------------------------------
+
+
+def test_duplicated_audio_yields_one_table_not_two(tmp_path):
+  """§9b keys the map by md5 and §11a documents 3 class-A duplicates where two
+  files share one. TOML cannot declare a key twice, so the map is one entry per
+  *recording*, not per file — md5 keying is the load-bearing clause (F44)."""
+  a = Entry(MD5, {"file": "CHICA 305.aiff", "isrc": "X"})
+  b = Entry(MD5, {"file": "CHICA 305 (2).aiff", "isrc": "X"})
+
+  out = render([a, b])
+
+  assert out.count(f'["{MD5}"]') == 1
+
+
+def test_the_duplicate_path_is_named_rather_than_hidden(tmp_path):
+  a = Entry(MD5, {"file": "CHICA 305.aiff"})
+  b = Entry(MD5, {"file": "CHICA 305 (2).aiff"})
+
+  out = render([a, b])
+
+  assert "also at: CHICA 305 (2).aiff" in out
+  assert "class A duplicate" in out
+
+
+def test_a_map_with_duplicates_is_still_valid_toml(tmp_path):
+  path = tmp_path / "library.toml"
+  path.write_text(
+    render(
+      [
+        Entry(MD5, {"file": "a.aiff", "isrc": "X"}),
+        Entry(MD5, {"file": "a (2).aiff", "isrc": "X"}),
+        Entry("other", {"file": "b.aiff", "isrc": "Y"}),
+      ]
+    )
+  )
+
+  got = read(path)
+
+  assert len(got) == 2
+  assert got[MD5]["file"] == "a.aiff"
+
+
+def test_the_first_path_by_order_is_the_one_kept(tmp_path):
+  out = render(
+    [Entry(MD5, {"file": "first.aiff"}), Entry(MD5, {"file": "second.aiff"})]
+  )
+
+  assert 'file     = "first.aiff"' in out
+
+
+def test_a_malformed_map_fails_loudly_rather_than_silently(tmp_path):
+  """§9b: the map carries hand-asserted values. treating a broken one as absent
+  would discard them on the next write — deleting it is the operator's call."""
+  path = tmp_path / "library.toml"
+  path.write_text('["dup"]\nfile = "a"\n\n["dup"]\nfile = "b"\n')
+
+  with pytest.raises(MapError, match="not valid TOML"):
+    read(path)
+
+
+def test_the_error_says_what_to_do(tmp_path):
+  path = tmp_path / "library.toml"
+  path.write_text("this is not toml at all [[[")
+
+  with pytest.raises(MapError, match="delete it to regenerate"):
+    read(path)

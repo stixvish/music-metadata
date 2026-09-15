@@ -36,6 +36,10 @@ FIELDS = ("file", "title", "artist", "album", "isrc", "spotify", "itunes", "beat
 _NOT_FOUND_COMMENT = "        # not found"
 
 
+class MapError(RuntimeError):
+  """raised when the map on disk cannot be read."""
+
+
 @dataclass(frozen=True, slots=True)
 class Entry:
   """one row of the map."""
@@ -60,6 +64,15 @@ def _escape(value: str) -> str:
 def render(entries: list[Entry]) -> str:
   """Render the map as TOML.
 
+  **One table per md5, not per file.** §9b describes the map as "one entry per
+  audio file, keyed by decoded-audio md5" — but §11a documents three class-A
+  duplicates where two files share one md5, and TOML cannot declare the same
+  key twice. the two clauses cannot both hold, and md5 keying is the load-
+  bearing one: it is what makes the map stable across a rename (F44).
+
+  a duplicated md5 is therefore one entry, with the other paths named in a
+  comment so nothing is hidden. §11a's report is where duplicates are acted on.
+
   Args:
     entries: the rows, in the order they should appear.
 
@@ -67,12 +80,25 @@ def render(entries: list[Entry]) -> str:
     The file contents.
   """
   out = [
-    "# library.toml — the map. one entry per file, keyed by decoded-audio md5.",
+    "# library.toml — the map. one entry per recording, keyed by decoded-audio md5.",
     "# regenerated every run. hand-edited values are preserved verbatim.",
     "",
   ]
+  seen: dict[str, Entry] = {}
+  ordered: list[Entry] = []
+  duplicates: dict[str, list[str]] = {}
   for entry in entries:
+    if entry.audio_md5 in seen:
+      # same decoded audio at another path — §11a class A.
+      duplicates.setdefault(entry.audio_md5, []).append(entry.values.get("file", ""))
+      continue
+    seen[entry.audio_md5] = entry
+    ordered.append(entry)
+
+  for entry in ordered:
     out.append(f'["{entry.audio_md5}"]')
+    for other in duplicates.get(entry.audio_md5, []):
+      out.append(f"# also at: {other}   (§11a class A duplicate)")
     for name in FIELDS:
       value = entry.values.get(name, "")
       line = f'{name:<8} = "{_escape(value)}"'
@@ -95,8 +121,19 @@ def read(path: Path) -> dict[str, dict[str, str]]:
   """
   if not path.is_file():
     return {}
-  with path.open("rb") as handle:
-    raw = tomllib.load(handle)
+  try:
+    with path.open("rb") as handle:
+      raw = tomllib.load(handle)
+  except tomllib.TOMLDecodeError as exc:
+    # **not swallowed into an empty map.** the file carries hand-asserted
+    # values (§9b), and treating a malformed one as absent would discard them
+    # silently on the next write. §9b says the map is safe to *delete* — that
+    # is the operator's call to make, knowing what it costs.
+    msg = (
+      f"{path} is not valid TOML: {exc}. "
+      f"fix the file, or delete it to regenerate (hand-edited values are lost)."
+    )
+    raise MapError(msg) from exc
   return {
     md5: {k: str(v) for k, v in table.items()}
     for md5, table in raw.items()
