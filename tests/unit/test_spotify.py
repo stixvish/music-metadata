@@ -289,8 +289,14 @@ def test_spotify_gets_more_retries_than_the_default():
     client.close()
 
 
-def test_the_rate_is_below_the_measured_429_threshold():
-  """measured: 20/min started returning 429 about 60 tracks into a full pass."""
+def test_the_rate_stays_inside_spotifys_rolling_window():
+  """spotify rate-limits over a rolling 30-second window.
+
+  this is deliberately **not** a test about the 429 that ended five passes —
+  that one was `QUOTA_EXCEEDED` (F56), a per-account budget no request rate can
+  satisfy. the rate exists to stay polite inside the 30s window, and 10 calls
+  per window is modest against a ceiling spotify has never published.
+  """
   from music_metadata.sources.spotify import _RATE_PER_MINUTE
 
-  assert _RATE_PER_MINUTE <= 10
+  assert _RATE_PER_MINUTE / 2 <= 10, "per rolling 30-second window"

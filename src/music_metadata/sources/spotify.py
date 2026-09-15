@@ -39,10 +39,19 @@ _MAX_PAGES = 10
 # refresh a little before expiry so a long run never races the clock.
 _TOKEN_MARGIN_S = 30.0
 
-# spotify does not publish a number and enforces over a rolling window. 20/min
-# was measured hitting 429 about 60 tracks into a full pass — with pagination
-# that is closer to 40 requests a minute — so the ceiling is halved.
-_RATE_PER_MINUTE = 10
+# **spotify enforces a rate limit and a quota, and they are different things.**
+# the rate limit is a rolling 30-second window; the quota is a budget for the
+# whole developer account, shared across every app in development mode.
+#
+# the 429 that killed five full passes was `"reason": "QUOTA_EXCEEDED"` (F56),
+# not a rate limit — so halving this to 10/min in response fixed nothing and
+# only made a pass twice as slow. 20/min is 10 calls per 30-second window,
+# which is modest against a limit spotify has never published, and we have no
+# measurement of ever hitting the rate limit itself.
+#
+# the quota is handled where it actually lives: `RateLimitedError` ends the
+# pass and `resolve` resumes from cache the next day.
+_RATE_PER_MINUTE = 20
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,6 +103,15 @@ class Spotify:
       retries=5,
     )
     self._auth_client = httpx.Client(timeout=self._source.timeout, transport=transport)
+
+  @property
+  def requests(self) -> int:
+    """How many search requests this client has spent (F56).
+
+    Returns:
+      The count, retries included — they come out of the same quota.
+    """
+    return self._source.requests
 
   def close(self) -> None:
     """Close both connection pools."""

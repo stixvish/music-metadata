@@ -99,7 +99,7 @@ cp .env.example .env    # then add SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET
 # 1. local tag survey. no network. ~2.5 minutes for 1,494 files.
 uv run music-metadata probe
 
-# 2. resolve identities into the sidecar. spotify at 10 req/min,
+# 2. resolve identities into the sidecar. spotify at 20 req/min,
 #    musicbrainz at 1 req/s.
 uv run music-metadata resolve --limit 20
 
@@ -137,12 +137,16 @@ months, and both facts are kept.
 part-way costs nothing to resume — re-running it skips what is already cached
 and picks up where it left off.
 
-It stops on purpose in one case. Spotify answers a 429 with a `Retry-After`
-measured in hours, not seconds (measured: 43,868s — 12.2h), which is a quota
-window rather than a throttle. Waiting it out inside the run would park the
-pass; skipping the track would be worse, because spotify is fetched first and a
-skip passes over musicbrainz, itunes and discogs too. So the pass ends and says
-when to come back:
+It stops on purpose in one case. Spotify enforces a **quota** as well as a rate
+limit, and they are different problems: the rate limit is a rolling 30-second
+window that slowing down fixes, while the quota is a budget for the whole
+developer account that slowing down does nothing for. A quota 429 says so in
+its body (`"reason": "QUOTA_EXCEEDED"`) and asks for hours — measured at
+43,868s, 12.2h.
+
+Waiting that out inside the run would park the pass; skipping the track would
+be worse, because spotify is fetched first and a skip passes over musicbrainz,
+itunes and discogs too. So the pass ends and says when to come back:
 
 ```text
 error  spotify: rate-limited for 43868s (12.2h) — stopping at track 62 of 1439.
@@ -150,7 +154,15 @@ error  spotify: rate-limited for 43868s (12.2h) — stopping at track 62 of 1439
 ```
 
 Re-run the same command after that time. Nothing is lost and nothing is
-re-fetched.
+re-fetched — the request count in that message is how the budget gets measured,
+since Spotify does not publish it.
+
+The map is derived from the sidecar, so an interrupted run has not lost it
+either:
+
+```bash
+uv run music-metadata map --regenerate
+```
 
 ## verifying a run
 

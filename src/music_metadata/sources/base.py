@@ -39,6 +39,10 @@ _BACKOFF_BASE = 1.0
 # it is why the two cases are handled differently.
 MAX_RETRY_AFTER_S = 60.0
 
+# spotify's own word for "this is a budget, not a speed limit" (F56). slowing
+# down does not clear it and retrying only spends more of it.
+QUOTA_EXCEEDED = "QUOTA_EXCEEDED"
+
 
 class SourceError(RuntimeError):
   """raised when a source fails in a way the caller cannot treat as a miss."""
@@ -47,23 +51,32 @@ class SourceError(RuntimeError):
 class RateLimitedError(SourceError):
   """the service has cut us off for a window measured in hours, not seconds.
 
+  spotify distinguishes two things that both surface as a 429, and they are not
+  interchangeable: a **rate** limit (too many calls in a rolling 30s window,
+  fixed by slowing down) and a **quota** (a budget for the developer account,
+  which no amount of slowing down recovers). the body carries
+  `"reason": "QUOTA_EXCEEDED"` for the second — see F56.
+
   **this is not a per-track failure and must not be handled as one.** skipping
   the track and moving to the next one re-asks a service that has already said
   no, for every remaining track, which banks nothing and risks extending the
   window. the caller stops the pass and reports when it can resume.
   """
 
-  def __init__(self, service: str, retry_after: float) -> None:
+  def __init__(self, service: str, retry_after: float, reason: str = "") -> None:
     """Build the error.
 
     Args:
       service: the source that cut us off.
       retry_after: seconds it asked us to wait.
+      reason: the service's own classification, when it gives one.
     """
     self.service = service
     self.retry_after = retry_after
+    self.reason = reason
     hours = retry_after / 3600.0
-    super().__init__(f"{service}: rate-limited for {retry_after:.0f}s ({hours:.1f}h)")
+    label = "quota exhausted" if reason == QUOTA_EXCEEDED else "rate-limited"
+    super().__init__(f"{service}: {label} for {retry_after:.0f}s ({hours:.1f}h)")
 
 
 class Source:
@@ -94,6 +107,7 @@ class Source:
     """
     self.name = name
     self.bucket = bucket
+    self.requests = 0
     self.retries = retries
     self._sleep = sleep
     self._timeout = timeout
@@ -144,6 +158,10 @@ class Source:
     last: str = "no attempt made"
     for attempt in range(1, self.retries + 1):
       self.bucket.take()
+      # **spotify does not publish the development-mode quota** (F56), so the
+      # only way to learn our budget is to count what we spent before it said
+      # no. retries count too — they come out of the same budget.
+      self.requests += 1
       try:
         response = self._client.get(path, params=params)
       except httpx.HTTPError as exc:
@@ -160,8 +178,11 @@ class Source:
         # fail immediately rather than spending the remaining attempts asking a
         # service that has already told us how long it will keep saying no.
         requested = _parse_retry_after(advice)
-        if requested is not None and requested > MAX_RETRY_AFTER_S:
-          raise RateLimitedError(self.name, requested)
+        reason = _error_reason(response)
+        if reason == QUOTA_EXCEEDED or (
+          requested is not None and requested > MAX_RETRY_AFTER_S
+        ):
+          raise RateLimitedError(self.name, requested or 0.0, reason)
         self._back_off(attempt, advice)
         continue
       if response.is_error:
@@ -192,6 +213,29 @@ class Source:
       self._sleep(fallback)
       return
     self._sleep(min(requested, MAX_RETRY_AFTER_S))
+
+
+def _error_reason(response: httpx.Response) -> str:
+  """Read the service's own classification of an error, when it gives one.
+
+  Args:
+    response: the error response.
+
+  Returns:
+    The `error.reason` string, or "" when the body says nothing useful. A body
+    that is not JSON is normal for an error page and must not raise here.
+  """
+  try:
+    body = response.json()
+  except ValueError:
+    return ""
+  if not isinstance(body, dict):
+    return ""
+  error = body.get("error")
+  if not isinstance(error, dict):
+    return ""
+  reason = error.get("reason")
+  return reason if isinstance(reason, str) else ""
 
 
 def _parse_retry_after(value: str | None) -> float | None:

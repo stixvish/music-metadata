@@ -1283,7 +1283,40 @@ GET /v1/search?q=isrc:...   HTTP 429   Retry-After: 43868    (12.2 hours)
 ```
 
 there is no `X-RateLimit-*` header — `Retry-After` is the only signal, and it is
-given in seconds.
+given in seconds. **the body names the cause**:
+
+```json
+{
+  "error": {
+    "status": 429,
+    "message": "Too many requests",
+    "reason": "QUOTA_EXCEEDED"
+  }
+}
+```
+
+**this is a quota, not a rate limit, and spotify treats the two differently.**
+the rate limit is calculated over a rolling 30-second window and is fixed by
+slowing down. the quota is a budget, counted **per developer account** (not per
+client id) since the July 2026 change, and no request rate satisfies it — the
+`reason` field exists precisely to tell them apart.
+
+**spotify does not publish the development-mode quota**, and extended quota
+mode is not available to us: since 2025-04-15 it requires a registered business
+with a launched service and **at least 250k MAU**. so the budget has to be
+measured, which is why `Source.requests` counts every call — retries included,
+since they spend the same budget.
+
+**the consequence for our earlier reasoning: halving the request rate from 20 to
+10/min was a fix for a problem we did not have.** it addressed a rate limit we
+have never been shown to hit, and doubled the length of a pass. the rate is back
+to 20/min (10 per rolling window) and the quota is handled by stopping.
+
+measured cost of a pass, from the 61 cached tracks: **86 search requests for 61
+tracks — 1.41 pages each** (52 tracks took 1 page, one took 10). extrapolated,
+a full 1,439-track pass costs **~2,030 search requests**. `limit` cannot be
+raised to amortise this: the search endpoint's published range is `0`-`10`,
+confirming F51.
 
 **this changes how a 429 has to be handled, in two ways.**
 

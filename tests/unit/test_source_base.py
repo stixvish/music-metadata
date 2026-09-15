@@ -266,3 +266,60 @@ def test_a_retry_after_given_as_an_http_date_falls_back_to_our_schedule():
   src.get_json("/x")
 
   assert src.clock.slept == [1.0]
+
+
+def test_a_quota_reason_stops_even_when_the_wait_is_short():
+  """quota and rate are different failures; only the body tells them apart.
+
+  a quota 429 could in principle carry a short `Retry-After`, and slowing down
+  would still not clear it — spotify counts the budget per developer account,
+  not per second. classify on the reason, not on the magnitude (F56).
+  """
+  attempts = []
+
+  def handler(request):
+    attempts.append(1)
+    return httpx.Response(
+      429,
+      headers={"retry-after": "5"},
+      json={"error": {"status": 429, "reason": "QUOTA_EXCEEDED"}},
+    )
+
+  src = make_source(handler, retries=3)
+  with pytest.raises(RateLimitedError, match="quota exhausted"):
+    src.get_json("/x")
+
+  assert len(attempts) == 1
+  assert src.clock.slept == []
+
+
+def test_a_429_with_no_reason_and_a_short_wait_is_still_just_a_retry():
+  """the ordinary rate limit must keep behaving like one."""
+  attempts = []
+
+  def handler(request):
+    attempts.append(1)
+    if len(attempts) == 1:
+      return httpx.Response(429, headers={"retry-after": "3"})
+    return httpx.Response(200, json={})
+
+  src = make_source(handler, retries=3)
+  assert src.get_json("/x") == {}
+  assert src.clock.slept == [3.0]
+
+
+def test_requests_are_counted_so_the_quota_can_be_measured():
+  """spotify does not publish the budget, so we count what we spend."""
+  attempts = []
+
+  def handler(request):
+    attempts.append(1)
+    if len(attempts) < 3:
+      return httpx.Response(503)
+    return httpx.Response(200, json={})
+
+  src = make_source(handler, retries=5)
+  src.get_json("/x")
+  src.get_json("/y")
+
+  assert src.requests == 4, "retries come out of the same budget"

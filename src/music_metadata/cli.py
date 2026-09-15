@@ -371,7 +371,8 @@ def cmd_resolve(args: argparse.Namespace) -> int:
               seconds=exc.retry_after
             )
             emit(
-              f"{exc} — stopping at track {index} of {len(rows)}. "
+              f"{exc} after {spotify.requests} requests this run — "
+              f"stopping at track {index} of {len(rows)}. "
               f"everything fetched so far is cached; "
               f"re-run after {resume:%a %H:%M} to resume.",
               level=Level.ERROR,
@@ -782,9 +783,17 @@ def cmd_map(args: argparse.Namespace) -> int:
   Returns:
     Process exit code.
   """
+  # §9b: the map is derived from the sidecar, so a run that was interrupted
+  # before its final flush has lost nothing — regenerate rather than telling
+  # the operator to re-fetch 1,439 tracks they have already paid for.
+  if args.regenerate or not args.map.is_file():
+    with Store.open(args.sidecar) as store:
+      count = write_map(store, args.map)
+    emit(f"regenerated {args.map} from the sidecar ({count} entries)")
+
   rows = library_map.read(args.map)
   if not rows:
-    emit(f"no map at {args.map} — run `apply` first", level=Level.WARN)
+    emit(f"no map at {args.map} — run `resolve` first", level=Level.WARN)
     return 1
 
   shown = 0
@@ -891,6 +900,11 @@ def build_parser() -> argparse.ArgumentParser:
   map_.add_argument("--map", type=Path, default=Path("library.toml"))
   map_.add_argument("--missing", help="only rows where this field is empty")
   map_.add_argument("--no-isrc", action="store_true", help="only rows with no ISRC")
+  map_.add_argument(
+    "--regenerate",
+    action="store_true",
+    help="rebuild the map from the sidecar before rendering",
+  )
   map_.set_defaults(func=cmd_map)
 
   serve_ = sub.add_parser("serve", help="run the web ui")
