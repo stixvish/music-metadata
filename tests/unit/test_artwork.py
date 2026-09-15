@@ -1,3 +1,4 @@
+import httpx
 import pytest
 
 from music_metadata.artwork import (
@@ -5,7 +6,9 @@ from music_metadata.artwork import (
   CANDIDATE_SONG_SEARCH,
   CANDIDATE_SPOTIFY,
   SIZES,
+  fetch_bytes,
   fetch_largest,
+  jpeg_dimensions,
   matches_release,
   resolve_artwork,
   upgrade_url,
@@ -275,3 +278,85 @@ def test_an_unreadable_jpeg_falls_back_to_the_requested_size():
   data, width, _ = fetch_largest("https://i.test/100x100bb.jpg", fetch=lambda u: JPEG)
 
   assert width == 3000
+
+
+# --- fetching the bytes -------------------------------------------------------
+
+
+def client(handler):
+  return httpx.Client(transport=httpx.MockTransport(handler))
+
+
+def test_a_good_response_returns_its_bytes():
+  big = b"\xff\xd8" + b"\x00" * 20_000
+
+  assert (
+    fetch_bytes(
+      "https://i.test/a.jpg", client=client(lambda r: httpx.Response(200, content=big))
+    )
+    == big
+  )
+
+
+def test_a_non_200_is_none():
+  got = fetch_bytes(
+    "https://i.test/a.jpg", client=client(lambda r: httpx.Response(404))
+  )
+
+  assert got is None
+
+
+def test_a_short_read_is_rejected_as_a_placeholder():
+  """apple serves a tiny placeholder rather than erroring on some sizes."""
+  tiny = b"\xff\xd8" + b"\x00" * 100
+
+  got = fetch_bytes(
+    "https://i.test/a.jpg", client=client(lambda r: httpx.Response(200, content=tiny))
+  )
+
+  assert got is None
+
+
+def test_a_transport_failure_is_none_not_an_exception():
+  def handler(request):
+    raise httpx.ConnectError("boom")
+
+  assert fetch_bytes("https://i.test/a.jpg", client=client(handler)) is None
+
+
+def test_jpeg_dimensions_reads_the_sof_marker():
+  import struct
+
+  sof = b"\xff\xc0" + struct.pack(">H", 17) + b"\x08" + struct.pack(">HH", 640, 480)
+  assert jpeg_dimensions(b"\xff\xd8" + sof + b"\x00" * 8) == (480, 640)
+
+
+def test_jpeg_dimensions_of_junk_is_none():
+  assert jpeg_dimensions(b"not a jpeg at all") is None
+  assert jpeg_dimensions(b"\xff\xd8\xff\xff\x00") is None
+
+
+def test_a_truncated_jpeg_header_is_none():
+  """a segment length running past the end must not raise."""
+  assert jpeg_dimensions(b"\xff\xd8\xff\xe0\xff") is None
+
+
+def test_no_album_artist_falls_back_to_the_name_check_alone():
+  """some releases have no album artist; the name must still be able to match."""
+  assert matches_release(release(), "No Strings Attached", "") is True
+
+
+def test_fetch_bytes_closes_a_client_it_created():
+  """the default path opens its own client; it must not leak one per track."""
+  got = fetch_bytes("https://i.test/nope.jpg")
+
+  assert got is None
+
+
+def test_an_empty_search_term_is_skipped():
+  """with no album artist and no album name there is nothing to search for."""
+  it = FakeItunes(albums=[release()])
+
+  resolve_artwork(it, "", "", "", fetch=always(JPEG))
+
+  assert it.terms == []
