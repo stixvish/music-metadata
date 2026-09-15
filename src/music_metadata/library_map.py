@@ -195,3 +195,50 @@ def write(path: Path, entries: list[Entry], store: Store) -> None:
       entry.audio_md5,
       {k: v for k, v in entry.values.items() if k not in entry.manual},
     )
+
+
+def set_isrc(path: Path, audio_md5: str, isrc: str) -> bool:
+  """Write one entry's `isrc` in place, leaving the rest of the file untouched.
+
+  **The whole file is not regenerated.** §9b's merge already preserves
+  hand-edits, but rewriting only the one line means every other edit, every
+  comment and the file's exact shape survive a lookup that touched one track —
+  which matters when the operator is working down a list of 55.
+
+  Args:
+    path: the map file.
+    audio_md5: which entry to change.
+    isrc: the value to set.
+
+  Returns:
+    True when the file was changed. False when there is no such entry, or it
+    already said this.
+  """
+  if not path.is_file():
+    return False
+  text = path.read_text()
+  heading = f'["{audio_md5}"]'
+  start = text.find(heading)
+  if start == -1:
+    return False
+  end = text.find('\n["', start + 1)
+  stop = end if end != -1 else len(text)
+
+  out = []
+  changed = False
+  for line in text[start:stop].splitlines(keepends=True):
+    if line.lstrip().startswith("isrc"):
+      newline = "\n" if line.endswith("\n") else ""
+      # the trailing `# not found` comment goes with the value; it is no
+      # longer true, and leaving it would read as a contradiction.
+      replacement = f'isrc     = "{isrc}"{newline}'
+      if line == replacement:
+        return False
+      out.append(replacement)
+      changed = True
+    else:
+      out.append(line)
+  if not changed:
+    return False
+  path.write_text(text[:start] + "".join(out) + text[stop:])
+  return True
