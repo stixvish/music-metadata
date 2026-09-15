@@ -441,6 +441,8 @@ def cmd_diff(args: argparse.Namespace) -> int:
     Process exit code.
   """
   with Store.open(args.sidecar) as store:
+    # the ui reads this table rather than re-probing the library (§14).
+    store.clear_proposed()
     shown = 0
     for probed in probe_tree(args.library):
       if args.limit and shown >= args.limit:
@@ -454,6 +456,14 @@ def cmd_diff(args: argparse.Namespace) -> int:
       for field_name, old, new in changes:
         source = resolved.provenance.get(field_name, "?")
         emit(f"  {field_name:<16} {old!r} -> {new!r}  [{source}]")
+        store.put_proposed(
+          audio_md5=probed.audio_md5,
+          file=probed.path.name,
+          field=field_name,
+          old_value=old,
+          new_value=new,
+          source=source,
+        )
       if resolved.flags:
         emit(f"  flags: {', '.join(resolved.flags)}", level=Level.WARN)
     emit(f"{shown} tracks would change")

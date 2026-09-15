@@ -12,7 +12,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -28,7 +28,6 @@ _TEMPLATES = Jinja2Templates(directory=str(_HERE / "templates"))
 # not worth building twice.
 _PLACEHOLDERS = {
   "acquire": "tier 0 acquisition lands after the library is tagged (M6).",
-  "diff": "diff and apply land with the tag writer (M1).",
 }
 
 # how each flag reads as a heading in the queue. §14: the flags are worthless in
@@ -94,6 +93,47 @@ def create_app(store: Store) -> FastAPI:
     """Accept a flagged value and clear it from the queue."""
     store.resolve_review(md5)
     return _TEMPLATES.TemplateResponse(request=request, name="accepted.html")
+
+  @app.get("/diff", response_class=HTMLResponse)
+  def diff(request: Request) -> HTMLResponse:
+    """The proposed change set, reviewable before anything is written (§14)."""
+    rows = [
+      {
+        "file": r["file"],
+        "field": r["field"],
+        "old": r["old_value"] or "",
+        "new": r["new_value"] or "",
+        "source": r["source"] or "",
+      }
+      for r in store.query("SELECT * FROM proposed ORDER BY file, field")
+    ]
+    tracks = len({r["file"] for r in rows})
+    return _TEMPLATES.TemplateResponse(
+      request=request, name="diff.html", context={"rows": rows, "total": tracks}
+    )
+
+  @app.post("/apply", response_class=HTMLResponse)
+  def apply(request: Request, confirm: str = Form(default="")) -> HTMLResponse:
+    """Applying is gated behind an explicit confirmation (§14).
+
+    The ui does not write files itself — it records the intent, and `apply` on
+    the CLI is what touches disk. one code path writes tags, not two.
+    """
+    if confirm != "yes":
+      return _TEMPLATES.TemplateResponse(
+        request=request,
+        name="applied.html",
+        context={"message": "not confirmed — nothing written", "error": True},
+      )
+    store.create_job("apply")
+    return _TEMPLATES.TemplateResponse(
+      request=request,
+      name="applied.html",
+      context={
+        "message": "confirmed. run `music-metadata apply --out DIR` to write.",
+        "error": False,
+      },
+    )
 
   @app.get("/{screen}", response_class=HTMLResponse)
   def placeholder(request: Request, screen: str) -> HTMLResponse:

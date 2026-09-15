@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}diff · music-metadata{% endblock %}
+{% block content %}
+    <h1>proposed changes</h1>
+    <p class="empty">
+        {{ total }} tracks would change. nothing is written until you confirm — and
+        the source library is never touched either way.
+    </p>
+    {% if rows %}
+        <table>
+            <thead>
+                <tr>
+                    <th>track</th>
+                    <th>field</th>
+                    <th>current</th>
+                    <th>proposed</th>
+                    <th>source</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in rows %}
+                    <tr>
+                        <td>{{ row.file }}</td>
+                        <td class="src">{{ row.field }}</td>
+                        <td class="was">{{ row.old }}</td>
+                        <td>{{ row.new }}</td>
+                        <td class="src">{{ row.source }}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <form class="apply"
+              hx-post="/apply"
+              hx-target="#applied"
+              hx-swap="innerHTML">
+            <label>
+                <input type="checkbox" name="confirm" value="yes" required />
+                write {{ total }} tagged copies to the output tree
+            </label>
+            <button type="submit">apply</button>
+        </form>
+        <div id="applied"></div>
+    {% else %}
+        <p class="empty">nothing to apply — run <code>resolve</code> first.</p>
+    {% endif %}
+{% endblock %}

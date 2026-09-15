@@ -405,6 +405,42 @@ class Store:
     )
     return {r["flag"]: int(r["n"]) for r in rows}
 
+  # --- the proposed change set (§14) -----------------------------------------
+
+  def put_proposed(
+    self,
+    audio_md5: str,
+    file: str,
+    field: str,
+    old_value: str,
+    new_value: str,
+    source: str,
+  ) -> None:
+    """Record one proposed field change, for the diff screen.
+
+    Args:
+      audio_md5: the track's decoded-audio md5.
+      file: the file's name.
+      field: the tag field.
+      old_value: what the file carries now.
+      new_value: what the resolver would write.
+      source: which source supplied it.
+    """
+    self.execute(
+      """INSERT INTO proposed (audio_md5, file, field, old_value, new_value, source)
+         VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT(audio_md5, field) DO UPDATE SET
+           file      = excluded.file,
+           old_value = excluded.old_value,
+           new_value = excluded.new_value,
+           source    = excluded.source""",
+      (audio_md5, file, field, old_value, new_value, source),
+    )
+
+  def clear_proposed(self) -> None:
+    """Drop the previous change set before recording a new one."""
+    self.execute("DELETE FROM proposed")
+
   # --- jobs ------------------------------------------------------------------
 
   def create_job(self, kind: str) -> int:

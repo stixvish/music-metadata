@@ -112,3 +112,15 @@ CREATE TABLE IF NOT EXISTS review (
   PRIMARY KEY (audio_md5, flag)
 );
 CREATE INDEX IF NOT EXISTS review_flag ON review (flag);
+
+-- the proposed change set, so the ui can show a diff without re-probing the
+-- library. written by `diff`, read by the diff screen (§14).
+CREATE TABLE IF NOT EXISTS proposed (
+  audio_md5 TEXT NOT NULL,
+  file      TEXT NOT NULL,
+  field     TEXT NOT NULL,
+  old_value TEXT,
+  new_value TEXT,
+  source    TEXT,
+  PRIMARY KEY (audio_md5, field)
+);
