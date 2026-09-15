@@ -53,6 +53,20 @@ SIZES = (3000, 1400, 600)
 CANDIDATE_ALBUM_SEARCH = "itunes-album-search"
 CANDIDATE_SONG_SEARCH = "itunes-song-search"
 CANDIDATE_SPOTIFY = "spotify-album-image"
+# **an operator-supplied link outranks every search** (§9b). it is the one
+# candidate that needs no verification: nothing was guessed, so there is
+# nothing to reject. it is also the only way to reach a release the search
+# index does not carry — measured on `Checkers`, which returns zero results
+# for every term tried across five stores but looks up cleanly by id, at
+# 3000px against spotify's 640.
+CANDIDATE_MANUAL = "operator-supplied"
+
+# https://music.apple.com/us/album/checkers/1657261196?i=1657261206
+#                                            ^collection    ^track
+_APPLE_URL = re.compile(
+  r"music\.apple\.com/[^/]+/(?:album|song)/[^/]*/(?P<collection>\d+)"
+)
+_APPLE_TRACK = re.compile(r"[?&]i=(?P<track>\d+)")
 
 # the size segment apple puts at the end of every artwork URL.
 _SIZE_SEGMENT = re.compile(r"/\d+x\d+bb\.jpg$")
@@ -160,6 +174,19 @@ def matches_release(
   return want_artist in got_artist or got_artist in want_artist
 
 
+def apple_collection_id(url: str) -> int | None:
+  """Read the collection id out of an apple music link.
+
+  Args:
+    url: a `music.apple.com` album or song link.
+
+  Returns:
+    The collection id, or None when the url is not one.
+  """
+  found = _APPLE_URL.search(url)
+  return int(found.group("collection")) if found else None
+
+
 def upgrade_url(artwork_url_100: str, size: int) -> str:
   """Rewrite an artwork URL to ask for a larger square (F5).
 
@@ -250,6 +277,62 @@ def fetch_largest(
       measured = jpeg_dimensions(data)
       return (data, measured[0] if measured else size, url)
   return None
+
+
+def artwork_from_link(
+  itunes: Itunes,
+  link: str,
+  fetch: Callable[[str], bytes | None] = fetch_bytes,
+) -> Artwork | None:
+  """Resolve artwork from a link the operator pasted into the map.
+
+  Two shapes are accepted, because both are things an operator actually has:
+  an apple music page link, and a direct image url.
+
+  Args:
+    itunes: the itunes adapter, for the id lookup.
+    link: the pasted value.
+    fetch: injectable byte fetcher.
+
+  Returns:
+    The artwork, or None when the link yields nothing.
+  """
+  link = link.strip()
+  if not link:
+    return None
+
+  collection = apple_collection_id(link)
+  if collection is not None:
+    releases = itunes.lookup(collection).releases
+    for release in releases:
+      if not release.artwork_url_100:
+        continue
+      got = fetch_largest(release.artwork_url_100, fetch=fetch)
+      if got is None:
+        continue
+      data, width, url = got
+      return Artwork(
+        data=data,
+        mime="image/jpeg",
+        width=width,
+        candidate=CANDIDATE_MANUAL,
+        source_release=release.collection_name,
+        url=url,
+      )
+    return None
+
+  # a direct image url: taken as given, since the operator asserted it.
+  direct = fetch(link)
+  if direct is None or len(direct) < MIN_PLAUSIBLE_BYTES:
+    return None
+  return Artwork(
+    data=direct,
+    mime="image/jpeg",
+    width=0,
+    candidate=CANDIDATE_MANUAL,
+    source_release="",
+    url=link,
+  )
 
 
 def resolve_artwork(
