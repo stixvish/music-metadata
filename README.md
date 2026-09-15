@@ -27,6 +27,7 @@ every refusal to guess lands in a review queue in the browser.
 | `diff` / `apply`    | tagged copies to an output tree; source untouched           |
 | `map`               | `library.toml` with the §9c view flags                      |
 | artist credit       | musicbrainz joinphrases, cross-checked against the filename |
+| G6 agreement        | **90.5%** measured on all 398 featured tracks (gate: 88%)   |
 | composer / lyricist | written where musicbrainz names the role (F52)              |
 | review queue        | flagged tracks in the browser, grouped by gate              |
 | **artwork**         | **not built** — the §7c chain lands in M3                   |
@@ -39,6 +40,12 @@ track number, disc number, mix name, remixer, original artist, ISRC, and —
 where musicbrainz names the role — composer and lyricist. everything else is
 deliberately left empty rather than guessed: §7e's position on BPM, applied
 generally.
+
+**on artist credit.** musicbrainz decides _who_ performed; the filename decides
+_which of them is featured_. F53 measured why: on 13 of 398 featured tracks
+musicbrainz joins the feature with `&` and it disappears, while the operator
+typed `(ft. …)` deliberately. where the two name genuinely different people —
+34 tracks — nothing is auto-resolved; they go to the review queue.
 
 **on composer and lyricist.** F52 measured that musicbrainz records explicit
 `composer` and `lyricist` roles for indian repertoire (10/10 works sampled) and
@@ -152,10 +159,10 @@ uv run pytest -q
 green — see `CLAUDE.md`.
 
 ```sh
-uv run pytest -q           # 306 tests, no network
+uv run pytest -q           # 322 tests, no network
 uv run pytest -q -m live   # hits the real spotify api
 uv run pytest -q -m slow   # probes all 1,494 files against the measured baseline
 ```
 
-the pure modules — `release`, `naming`, `output` — are held at 100% coverage
-with a 90% floor. they carry the decisions the spec argued hardest about.
+the pure modules — `release`, `naming`, `credit`, `output` — are held at 100%
+coverage with a 90% floor. they carry the decisions the spec argued hardest about.
