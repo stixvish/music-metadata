@@ -38,6 +38,7 @@ from music_metadata.release import (
   choose_release,
   earliest_release_date,
 )
+from music_metadata.sources.beatport import Match
 from music_metadata.sources.discogs import DiscogsRelease
 from music_metadata.sources.itunes import ItunesRelease
 from music_metadata.sources.musicbrainz import Credit, Work
@@ -52,12 +53,16 @@ DERIVED = "derived"
 MUSICBRAINZ = "musicbrainz"
 ITUNES = "itunes"
 DISCOGS = "discogs"
+BEATPORT = "beatport"
 
 # flags raised for the review queue (§14). a flag is never a silent fallback.
 FLAG_NO_ISRC = "no-isrc"
 FLAG_NO_PERFORMER = "no-performer-credit"
 FLAG_NO_RELEASE = "no-release"
 FLAG_NO_ARTWORK = "no-artwork"
+# OQ-8: the beatport listing is materially longer — a re-acquisition candidate,
+# never a substitution.
+FLAG_SHORTER_THAN_BEATPORT = "shorter-than-beatport"
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,6 +102,7 @@ def arbitrate(
   itunes: ItunesRelease | None = None,
   discogs: DiscogsRelease | None = None,
   artwork: Artwork | None = None,
+  beatport: Match | None = None,
 ) -> Resolved:
   """Resolve one track's tags from the sources available.
 
@@ -112,6 +118,7 @@ def arbitrate(
     itunes: the verified itunes release, for the genre fallback (§7).
     discogs: the discogs release, for label and a deeper genre (F46/F47).
     artwork: the artwork §7c's chain verified, if any.
+    beatport: the beatport match and its G3 field class, if any.
 
   Returns:
     The tags to write, the per-field provenance, and any review flags.
@@ -235,20 +242,50 @@ def arbitrate(
       tags = replace(tags, lyricist=join_artists(list(work.lyricists)))
       provenance["lyricist"] = MUSICBRAINZ
 
-  # §7 precedence for genre: beatport (M4), then discogs `styles[0]` (F47),
-  # then itunes `primaryGenreName`. discogs' taxonomy is deeper, which is why
-  # it sits above itunes rather than beside it.
-  if discogs is not None and discogs.style:
+  # §7 precedence for genre: beatport, then discogs `styles[0]` (F47), then
+  # itunes `primaryGenreName`. genre transfers in **both** G3 classes — F23 is
+  # explicit that a different edit of the same work still shares its genre.
+  if beatport is not None and beatport.track.best_genre:
+    tags = replace(tags, genre=beatport.track.best_genre)
+    provenance["genre"] = BEATPORT
+  elif discogs is not None and discogs.style:
     tags = replace(tags, genre=discogs.style)
     provenance["genre"] = DISCOGS
   elif itunes is not None and itunes.primary_genre:
     tags = replace(tags, genre=itunes.primary_genre)
     provenance["genre"] = ITUNES
 
-  # §7 precedence for label: beatport (M4), then discogs `labels[]` (F46).
-  if discogs is not None and discogs.label:
+  # §7 precedence for label: beatport, then discogs `labels[]` (F46). label
+  # also transfers in both classes.
+  if beatport is not None and beatport.track.label:
+    tags = replace(tags, label=beatport.track.label)
+    provenance["label"] = BEATPORT
+  elif discogs is not None and discogs.label:
     tags = replace(tags, label=discogs.label)
     provenance["label"] = DISCOGS
+
+  if beatport is not None:
+    # G3's split. **bpm, key and length transfer ONLY when the durations agree**
+    # — outside ±5s this is a different recording, and its tempo is not this
+    # file's tempo.
+    if beatport.transfers_everything:
+      if beatport.track.bpm is not None:
+        tags = replace(tags, bpm=beatport.track.bpm)
+        provenance["bpm"] = BEATPORT
+      # §7f: camelot, and None rather than a guess when unparseable.
+      camelot = beatport.track.camelot_key
+      if camelot:
+        tags = replace(tags, key=camelot)
+        provenance["key"] = BEATPORT
+
+    # remixer identity transfers in both classes (G3).
+    if beatport.track.remixers and not tags.remixer:
+      tags = replace(tags, remixer=join_artists(list(beatport.track.remixers)))
+      provenance["remixer"] = BEATPORT
+
+    # OQ-8: flag, never substitute, and never adopt beatport's ISRC (G9).
+    if beatport.materially_longer:
+      flags.append(FLAG_SHORTER_THAN_BEATPORT)
 
   # G5: artwork is refetched for every track, but only from a **verified**
   # release. when nothing verifies, the existing embedded art is kept and the

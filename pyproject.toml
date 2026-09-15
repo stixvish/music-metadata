@@ -72,7 +72,7 @@ convention = "google"
 # shell — the same reasoning that exempts tools/. ARG: a mock transport handler
 # takes the request whether or not the test looks at it. S105/S106: fake
 # credentials in fixtures are the point, not a leak.
-"tests/*" = ["D", "ANN", "S101", "S603", "S607", "ARG", "S105", "S106"]
+"tests/*" = ["D", "ANN", "S101", "S603", "S607", "ARG", "S105", "S106", "S107"]
 # tools/ holds standalone operator scripts, not library code. CLAUDE.md scopes
 # T20 to src/ precisely because the CLI there writes through an output module;
 # these scripts print as their entire interface. their subprocess calls pass
@@ -114,5 +114,6 @@ include = [
   "src/music_metadata/naming.py",
   "src/music_metadata/credit.py",
   "src/music_metadata/artwork.py",
+  "src/music_metadata/camelot.py",
 ]
 fail_under = 90

@@ -1,13 +1,18 @@
-#!/usr/bin/env python3
-"""Convert musical key notation to Camelot notation.
+"""musical key to camelot notation (SPEC.md §7f).
 
-Beatport reports keys as "Eb Minor", "Db Major", "F# Minor". Rekordbox and
-Serato both display Camelot, and it is what harmonic mixing actually uses, so
-`TKEY` is written in Camelot (SPEC.md §7e).
+beatport reports keys as `"Eb Minor"`, `"Db Major"`, `"F# Minor"`. rekordbox and
+serato both display camelot, and harmonic mixing is done in it, so `TKEY` is
+written in camelot — storing `2A` rather than `Eb Minor` means the tag is usable
+without mental conversion mid-set.
 
-The wheel is circle-of-fifths ordered: B = major, A = its relative minor, so
-nA and nB share the same seven notes. Anchors verified against published
-charts: 1A = A-flat minor, 1B = B major, 8A = A minor, 8B = C major.
+the wheel is circle-of-fifths ordered: `B` is major, `A` is its relative minor,
+so `nA` and `nB` share the same seven notes and mix cleanly. anchors verified
+against published charts: 1A = A♭ minor, 1B = B major, 8A = A minor, 8B = C
+major ([dj.studio](https://dj.studio/blog/camelot-wheel), checked 2026-09-14).
+
+**an unparseable key returns None and `TKEY` is left empty.** a wrong key is
+worse than a missing one: it survives into a set and gets trusted. this mirrors
+§7e's position on BPM.
 """
 
 # fmt: off
@@ -33,6 +38,11 @@ _ENHARMONIC = {
 
 
 def _build() -> dict[tuple[str, str], str]:
+  """Build the (root, mode) -> camelot code table.
+
+  Returns:
+    Every one of the 24 codes, keyed by root note and mode.
+  """
   table: dict[tuple[str, str], str] = {}
   for n, root in _MAJOR_BY_NUMBER.items():
     table[(root, "major")] = f"{n}B"
@@ -69,47 +79,3 @@ def to_camelot(key: str | None) -> str | None:
   else:
     return None
   return _TABLE.get((root, mode))
-
-
-if __name__ == "__main__":
-  # every key Beatport returned during spec research, plus both anchors
-  # and every enharmonic spelling.
-  cases = [
-    ("Eb Minor", "2A"),
-    ("B Minor", "10A"),
-    ("Ab Minor", "1A"),
-    ("Db Major", "3B"),
-    ("D Major", "10B"),
-    ("E Major", "12B"),
-    ("C Minor", "5A"),
-    ("B Major", "1B"),
-    ("G Minor", "6A"),
-    ("A Minor", "8A"),
-    ("C Major", "8B"),
-    ("D# Minor", "2A"),
-    ("G# Minor", "1A"),
-    ("C# Major", "3B"),
-    ("Gb Major", "2B"),
-    ("A# Minor", "3A"),
-    ("f# minor", "11A"),
-    ("F MAJOR", "7B"),
-    ("Bb maj", "6B"),
-    ("", None),
-    ("nonsense", None),
-    ("H Minor", None),
-  ]
-  bad = 0
-  for given, want in cases:
-    got = to_camelot(given)
-    ok = got == want
-    bad += not ok
-    print(f"  {'ok ' if ok else 'FAIL'}  {given!r:<14} -> {got!r:<6} (want {want!r})")
-  # every code must be unique and all 24 must be covered
-  codes = sorted(_TABLE.values())
-  every = {f"{n}{mode}" for n in range(1, 13) for mode in "AB"}
-  print(
-    f"\n  codes: {len(codes)} unique={len(set(codes)) == 24} "
-    f"covered={set(codes) == every}"
-  )
-  print("  FAILURES:", bad)
-  raise SystemExit(1 if bad else 0)
