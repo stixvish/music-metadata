@@ -1543,6 +1543,29 @@ distinction is invisible in a browser — both are "the song on youtube" — so
 `tools/yt_isrc.py` detects the case (a result carrying only `youtube*` services)
 and says to use the track link, rather than reporting a failed lookup.
 
+**the video case is recovered, not reported.** measured: the domain in a
+youtube link is irrelevant and the video id is everything —
+`youtube.com/watch?v=fxHjlCBHuzA` and `music.youtube.com/watch?v=fxHjlCBHuzA`
+both resolve, and both spellings of `Eo-KmOd3i7s` resolve to nothing. so there
+is no domain conversion to perform, and no way for the operator to tell the two
+apart by looking. when a video is pasted, `isrc_recovery` reads the title off
+it, searches youtube music for the track, and resolves that instead:
+
+```text
+youtube.com/watch?v=liZm1im2erU        (the official video)
+  -> USRC11201220  A$AP Rocky, Drake, 2 Chainz, Kendrick Lamar — F**kin' Problems
+     recovered from a video link by searching youtube music
+```
+
+**this reaches tracks spotify does not.** the operator could not find two
+Calvin Harris remixes on spotify and assumed they were unavailable; both have
+ISRCs, and both were recovered this way:
+
+```text
+Let's Go (Swanky Tunes & Hard Rock Sofa Remix)   GBARL1202144   350.9s ✓
+Sweet Nothing (Diplo + Grandtheft remix)         GBARL1202425   306.0s ✓
+```
+
 **a recovered ISRC is checked before it is written.** G10's rule does not care
 where an ISRC came from, and pasting the wrong link is the easy mistake when
 working through 55 tracks by hand:

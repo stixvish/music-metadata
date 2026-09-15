@@ -170,6 +170,33 @@ ISRC, so both of the usual tests miss it. These are matched on duration plus
 title and **always go to the review queue** — never auto-removed, because the
 duration signal alone produces false positives.
 
+## filling in missing ISRCs
+
+55 files carry no ISRC tag, and the ISRC is the key every other field hangs off.
+The `isrc` screen in the web UI takes a YouTube link per track, reads the ISRC
+from it (F19), checks it against the file's own length, and writes it to
+`library.toml`:
+
+```bash
+uv run music-metadata serve      # then open /isrc
+```
+
+**A link to the official video works too.** The video and the track are separate
+uploads with different ids — indistinguishable in a browser — and only the track
+maps to a release. Paste the video and the track is looked up and used instead.
+
+Nothing is written unless the duration agrees within 5s, so a mispasted link is
+refused rather than tagged. The same thing from the CLI:
+
+```bash
+uv run python tools/yt_isrc.py look "https://www.youtube.com/watch?v=liZm1im2erU"
+uv run python tools/yt_isrc.py fill pairs.txt    # <filename><TAB><url> per line
+```
+
+Hand-edits to `library.toml` outrank every source and survive every regenerate —
+and a hand-typed ISRC is resolved _with_, not merely written, so the whole
+pipeline runs against it.
+
 ## resuming a run
 
 `resolve` caches every source's raw response separately, so a pass that stops
