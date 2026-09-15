@@ -2379,7 +2379,12 @@ live APIs, marked and excluded from the default run.
   stripping needed.
 - ~~**OQ-7 artist separator style.**~~ **decided:** comma between every artist,
   `&` before the last (§7a).
-- ~~**OQ-10 discogs.**~~ **adopted.** `DISCOGS_TOKEN` is in `.env`. discogs is
+- ~~**OQ-10 discogs.**~~ **adopted.** _(measured 2026-09-14: the authenticated
+  rate limit is **60 req/min**, reported in the `x-discogs-ratelimit` header.
+  the two-call shape is confirmed necessary — the search endpoint's flat
+  `label` array merges pressing plants, publishers and studios with the real
+  labels, and only `/releases/{id}` separates `labels` from `companies`.)_
+  `DISCOGS_TOKEN` is in `.env`. discogs is
   **tier 2**, supplying `label` (F46) and a `styles` genre fallback that beats
   itunes (F47). still **not** a BPM or key source — it has neither (§7e). costs
   two calls per track (search → release), so it runs only when beatport has no
