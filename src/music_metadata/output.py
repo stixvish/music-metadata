@@ -55,6 +55,10 @@ class StdoutSink:
     parts = [f"{message.level.value:<5}", message.text]
     parts += [f"{k}={v}" for k, v in message.fields.items()]
     sys.stdout.write("  ".join(parts) + "\n")
+    # **flush every line.** python block-buffers stdout when it is not a tty, so
+    # a run redirected to a log shows nothing until 8KB accumulates — which for
+    # a multi-hour resolve means progress is invisible exactly when it matters.
+    sys.stdout.flush()
 
 
 class Recorder:

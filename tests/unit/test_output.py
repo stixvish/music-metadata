@@ -1,3 +1,5 @@
+import sys
+
 import pytest
 
 from music_metadata.output import Level, Recorder, emit, get_sink, set_sink
@@ -71,3 +73,15 @@ def test_default_sink_renders_level_and_fields(capsys):
   assert "error" in out
   assert "no premium itag offered" in out
   assert "itag=251" in out
+
+
+def test_the_default_sink_flushes_every_line(capsys, monkeypatch):
+  """python block-buffers a redirected stdout; a multi-hour run must not go
+  silent for 8KB at a time."""
+  flushes = []
+  monkeypatch.setattr(sys.stdout, "flush", lambda: flushes.append(1))
+
+  emit("one")
+  emit("two")
+
+  assert len(flushes) >= 2
