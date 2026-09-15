@@ -7,6 +7,7 @@ from music_metadata.arbitrate import (
   FLAG_NO_ARTWORK,
   FLAG_NO_ISRC,
   FLAG_NO_RELEASE,
+  FLAG_SHORTER_THAN_BEATPORT,
   MANUAL,
   SPOTIFY,
   arbitrate,
@@ -16,6 +17,12 @@ from music_metadata.artwork import Artwork
 from music_metadata.credit import FLAG_CREDIT_DISAGREEMENT
 from music_metadata.probe import ProbedFile
 from music_metadata.release import ReleaseCandidate
+from music_metadata.sources.beatport import (
+  CLASS_DIFFERENT_EDIT,
+  CLASS_SAME_RECORDING,
+  BeatportTrack,
+  Match,
+)
 from music_metadata.sources.discogs import DiscogsRelease
 from music_metadata.sources.itunes import ItunesRelease
 from music_metadata.sources.musicbrainz import Credit, Work
@@ -440,3 +447,125 @@ def test_no_verified_artwork_flags_rather_than_substituting():
 
   assert got.tags.artwork is None
   assert FLAG_NO_ARTWORK in got.flags
+
+
+# --- M4: beatport, and G3's field split -------------------------------------
+
+
+def bp_match(field_class=CLASS_SAME_RECORDING, delta=1.0, **kw):
+  base = {
+    "track_id": 1,
+    "name": "Blessings",
+    "mix_name": "Odd Mob Remix",
+    "artists": ("Calvin Harris",),
+    "remixers": ("Odd Mob",),
+    "genre": "House",
+    "sub_genre": "Tech House",
+    "label": "Columbia",
+    "bpm": 128,
+    "key": "Eb Minor",
+    "length_ms": 200_000,
+    "isrc": "BPISRC000001",
+  }
+  base.update(kw)
+  return Match(BeatportTrack(**base), "search", field_class, delta)
+
+
+def test_beatport_genre_outranks_discogs_and_itunes():
+  got = arbitrate(
+    probed(),
+    [cand()],
+    itunes=ItunesRelease(1, "A", "B", primary_genre="Dance"),
+    discogs=DiscogsRelease(1, "A", styles=("Progressive House",)),
+    beatport=bp_match(),
+  )
+
+  assert got.tags.genre == "Tech House"
+  assert got.provenance["genre"] == "beatport"
+
+
+def test_beatport_label_outranks_discogs():
+  got = arbitrate(
+    probed(),
+    [cand()],
+    discogs=DiscogsRelease(1, "A", labels=("Fly Eye",)),
+    beatport=bp_match(),
+  )
+
+  assert got.tags.label == "Columbia"
+
+
+def test_a_same_recording_match_writes_bpm_and_key():
+  """G3: within ±5s the recording is the same, so all fields transfer."""
+  got = arbitrate(probed(), [cand()], beatport=bp_match())
+
+  assert got.tags.bpm == 128
+  assert got.tags.key == "2A"
+  assert got.provenance["bpm"] == "beatport"
+
+
+def test_a_different_edit_transfers_genre_but_not_bpm_or_key():
+  """G3's whole point. a different edit's tempo is not this file's tempo."""
+  got = arbitrate(
+    probed(), [cand()], beatport=bp_match(field_class=CLASS_DIFFERENT_EDIT, delta=42.0)
+  )
+
+  assert got.tags.genre == "Tech House"
+  assert got.tags.label == "Columbia"
+  assert got.tags.bpm is None
+  assert got.tags.key is None
+
+
+def test_beatports_isrc_is_never_adopted():
+  """G9: adopting it would label the file as a track it is not."""
+  got = arbitrate(
+    probed(isrc="USJI10000001"),
+    [cand()],
+    beatport=bp_match(field_class=CLASS_DIFFERENT_EDIT, delta=42.0),
+  )
+
+  assert got.tags.isrc == "USJI10000001"
+
+
+def test_beatports_isrc_is_not_adopted_even_on_a_same_recording_match():
+  got = arbitrate(probed(isrc="USJI10000001"), [cand()], beatport=bp_match())
+
+  assert got.tags.isrc == "USJI10000001"
+
+
+def test_the_key_is_written_in_camelot():
+  """§7f: `2A`, not `Eb Minor`, so it is usable without conversion mid-set."""
+  got = arbitrate(probed(), [cand()], beatport=bp_match())
+
+  assert got.tags.key == "2A"
+
+
+def test_an_unparseable_key_leaves_tkey_empty():
+  got = arbitrate(probed(), [cand()], beatport=bp_match(key="gibberish"))
+
+  assert got.tags.key is None
+
+
+def test_a_materially_longer_match_is_flagged_not_substituted():
+  """OQ-8: `verify` emits a re-acquisition worklist; nothing is rewritten."""
+  got = arbitrate(
+    probed(), [cand()], beatport=bp_match(field_class=CLASS_DIFFERENT_EDIT, delta=42.0)
+  )
+
+  assert FLAG_SHORTER_THAN_BEATPORT in got.flags
+
+
+def test_a_close_match_is_not_flagged():
+  got = arbitrate(probed(), [cand()], beatport=bp_match())
+
+  assert FLAG_SHORTER_THAN_BEATPORT not in got.flags
+
+
+def test_no_beatport_falls_back_to_discogs_genre():
+  """§5: if beatport breaks, genre falls back and the pipeline completes."""
+  got = arbitrate(
+    probed(), [cand()], discogs=DiscogsRelease(1, "A", styles=("House",)), beatport=None
+  )
+
+  assert got.tags.genre == "House"
+  assert got.tags.bpm is None
