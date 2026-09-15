@@ -1598,6 +1598,45 @@ component cannot see it.** what catches it is asserting the wired behaviour —
 that a track with no itunes match still gets artwork — rather than that the
 function returns artwork when handed a URL.
 
+**F65 — the itunes search finds nothing for an album name carrying an edition
+qualifier.** measured 2026-09-15, and this is why §7c's chain was failing before
+candidate C was even reached:
+
+```text
+entity=album  "24kGoldn El Dorado (Deluxe)"   ->  0 results
+entity=album  "24kGoldn El Dorado"            ->  3 results, the album first
+```
+
+the verification compounded it: `matches_release` requires the chosen name to
+be _contained_ in the result's, so even a successful search for `El Dorado`
+would have been rejected against a chosen name of `El Dorado (Deluxe)`.
+
+**the edition qualifier is the one part of an album name that does not identify
+the record.** it is now stripped from the search term and from both sides of the
+comparison, while the tag still carries the name §7b chose. apple's artwork is a
+per-album master (F54), so the cover is the same either way.
+
+**this interacts badly with the edition preference, and the interaction is
+ours.** §7b was reversed the same day to prefer the expanded edition, which
+raises the number of chosen album names carrying a qualifier: **22 of the 61
+resolved tracks**. without this fix that reversal would have taken artwork away
+from all 22.
+
+measured after both fixes:
+
+```text
+Prada       itunes-album-search   3000px  from 'El Dorado'
+Checkers    spotify-album-image    640px  from 'Checkers (feat. Bandmanrill)'
+```
+
+`Checkers` is genuinely absent from the itunes search index — probed against the
+US, CA, GB, IN and AU stores, all zero — so candidate C is the correct answer
+there, not a consolation.
+
+**8 cached payloads hold a 0-result response** from the old query and will not
+improve until refetched; the artwork step is skipped whenever the itunes payload
+is already cached.
+
 **F64 — "we never asked" was being reported as "there is nothing".** the quota
 stop (F56) left every track past the cut-off with an empty candidate list, and
 an empty list raised `no-release` — rendered as "no release found". the operator
