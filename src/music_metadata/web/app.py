@@ -47,7 +47,10 @@ _GATE_LABELS = {
 }
 
 
-def create_app(store: Store, map_path: Path = Path("library.toml")) -> FastAPI:
+def create_app(
+  store: Store,
+  overrides_path: Path = Path("overrides.toml"),
+) -> FastAPI:
   """Build the app around an already-open store.
 
   Taking the store rather than a path keeps the tests and the CLI on one
@@ -55,9 +58,9 @@ def create_app(store: Store, map_path: Path = Path("library.toml")) -> FastAPI:
 
   Args:
     store: the sidecar cache backing every screen.
-    map_path: `library.toml` (§9b), which the ISRC screen writes to. The same
-      file the CLI uses, so an edit made in the browser is an edit the next
-      `resolve` picks up.
+    overrides_path: `overrides.toml`, where the ISRC screen records what it
+      recovers. The same file the CLI reads, so a lookup done in the browser is
+      an assertion the next `resolve` picks up.
 
   Returns:
     The configured application.
@@ -69,9 +72,9 @@ def create_app(store: Store, map_path: Path = Path("library.toml")) -> FastAPI:
     """Read the map's hand-edited values.
 
     Returns:
-      md5 to asserted fields; empty when no map exists yet.
+      md5 to asserted fields; empty when nothing has been asserted yet.
     """
-    return library_map.read(map_path) if map_path.is_file() else {}
+    return library_map.read_overrides(overrides_path)
 
   def make_musicfetch() -> Musicfetch | None:
     """Build a musicfetch client, or None when no token is configured.
@@ -86,17 +89,20 @@ def create_app(store: Store, map_path: Path = Path("library.toml")) -> FastAPI:
     token = get("MUSICMATCH_TOKEN")
     return Musicfetch(token) if token else None
 
-  def write_isrc(md5: str, isrc: str) -> bool:
-    """Record a recovered ISRC in the map.
+  def write_isrc(md5: str, isrc: str, file: str) -> bool:
+    """Record a recovered ISRC as an assertion.
 
     Args:
       md5: the file's audio hash.
       isrc: the verified ISRC.
+      file: the filename, written as a label so the entry says what it is.
 
     Returns:
-      Whether the map changed.
+      Whether the overrides file changed.
     """
-    return library_map.set_isrc(map_path, md5, isrc)
+    changed = library_map.set_override(overrides_path, md5, "isrc", isrc)
+    library_map.set_override(overrides_path, md5, "file", file)
+    return changed
 
   @app.get("/", response_class=HTMLResponse)
   def library(
@@ -186,7 +192,7 @@ def create_app(store: Store, map_path: Path = Path("library.toml")) -> FastAPI:
           client.close()
 
     if result.usable and result.isrc:
-      write_isrc(md5, result.isrc)
+      write_isrc(md5, result.isrc, Path(file["path"]).name)
 
     row = {
       "md5": md5,

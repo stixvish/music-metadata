@@ -19,7 +19,8 @@ usage:
 
 `fill` reads lines of `<file-or-md5><TAB><url>`, so the worklist in
 `tasks/no-isrc.md` can be pasted in with a url appended to each line. `-` reads
-stdin. nothing is written unless an ISRC was actually recovered.
+stdin. recovered ISRCs are written to `overrides.toml`; `library.toml` is only
+read, to resolve a filename to its md5.
 """
 
 import argparse
@@ -128,7 +129,8 @@ def cmd_fill(args: argparse.Namespace) -> int:
         print(f"SKIP  {key}: {found.note}")
         skipped += 1
         continue
-      if not library_map.set_isrc(args.map, md5, found.isrc):
+      library_map.set_override(args.overrides, md5, "file", rows[md5].get("file", ""))
+      if not library_map.set_override(args.overrides, md5, "isrc", found.isrc):
         print(f"SKIP  {key}: already {rows[md5].get('isrc', '')!r}")
         skipped += 1
         continue
@@ -155,6 +157,7 @@ def main() -> None:
   fill = sub.add_parser("fill", help="write recovered ISRCs into library.toml")
   fill.add_argument("pairs", help="file of `<file-or-md5><TAB><url>` lines, or -")
   fill.add_argument("--map", type=Path, default=Path("library.toml"))
+  fill.add_argument("--overrides", type=Path, default=Path("overrides.toml"))
   fill.add_argument("--sidecar", type=Path, default=DEFAULT_SIDECAR)
   fill.set_defaults(func=cmd_fill)
 
