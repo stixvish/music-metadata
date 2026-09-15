@@ -96,7 +96,7 @@ def arbitrate(
   probed: ProbedFile,
   candidates: list[ReleaseCandidate] | tuple[ReleaseCandidate, ...] = (),
   overrides: dict[str, str] | None = None,
-  prefer_standard_edition: bool = True,
+  prefer_expanded_edition: bool = True,
   musicbrainz: Credit | None = None,
   work: Work | None = None,
   itunes: ItunesRelease | None = None,
@@ -111,7 +111,7 @@ def arbitrate(
     candidates: every release spotify returned for the ISRC.
     overrides: hand-edited values from `library.toml`, which outrank every
       source (§7).
-    prefer_standard_edition: passed through to §7b's ranking.
+    prefer_expanded_edition: passed through to §7b's ranking.
     musicbrainz: the joinphrase credit split, when musicbrainz has the
       recording (§6).
     work: the work's writing credits, for `TCOM` and `TEXT` (§7d).
@@ -139,7 +139,7 @@ def arbitrate(
   name_artist, name_title = split_filename(probed.path.stem)
   parsed_name = split_title(name_title)
 
-  chosen = choose_release(candidates, prefer_standard_edition=prefer_standard_edition)
+  chosen = choose_release(candidates, prefer_expanded_edition=prefer_expanded_edition)
   if chosen is None:
     flags.append(FLAG_NO_RELEASE)
     # nothing but the file itself is known; fall back to what it is called.

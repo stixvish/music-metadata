@@ -104,11 +104,15 @@ def test_a_one_track_album_also_sorts_last():
   assert choose_release([one, many]) is many
 
 
-# --- clause 3: standard edition over deluxe ----------------------------------
+# --- clause 3: the expanded edition over the standard one --------------------
+# reversed 2026-09-15. the old rule's premise was that track numbers match
+# across editions, so only the album name was at stake — measured false: 10 of
+# 15 library tracks on both editions shift, `Cinderella Story` from #2/20 to
+# #28/29. what is actually at stake is keeping one album under one name.
 
 
-def test_the_standard_edition_is_preferred_over_the_bonus_version():
-  """§7b NAV: 'most tracks' picked the bonus edition, which was the old bug."""
+def test_the_expanded_edition_is_preferred_over_the_standard_one():
+  """so every track of an album lands under one name, with one numbering."""
   standard = cand(
     album="Demons Protected By Angels",
     total_tracks=19,
@@ -122,15 +126,24 @@ def test_the_standard_edition_is_preferred_over_the_bonus_version():
     release_date="2022-09-14",
   )
 
-  assert choose_release([bonus, standard]) is standard
+  assert choose_release([bonus, standard]) is bonus
 
 
-def test_more_tracks_does_not_win():
-  """the explicit anti-requirement: ranking by total_tracks broke deluxes."""
-  standard = cand(album="Album", total_tracks=19, release_date="2022-09-09")
-  bonus = cand(album="Album (Deluxe)", total_tracks=40, release_date="2022-09-09")
+def test_more_tracks_still_does_not_win_on_its_own():
+  """clause 3 breaks a tie between editions, it is not "biggest release wins".
 
-  assert choose_release([bonus, standard]) is standard
+  ranking by `total_tracks` was a different and worse rule: it reached past the
+  album entirely for anything that also appears on a long compilation. a
+  compilation must still lose to the album even when it is far longer.
+  """
+  album = cand(album="Album", album_type="album", total_tracks=12)
+  compilation = cand(
+    album="Now That's What I Call Music 50",
+    album_type="compilation",
+    total_tracks=40,
+  )
+
+  assert choose_release([compilation, album]) is album
 
 
 @pytest.mark.parametrize(
@@ -146,24 +159,29 @@ def test_more_tracks_does_not_win():
   ],
 )
 def test_edition_variants_are_recognised(name):
-  standard = cand(album="Album", release_date="2022-01-02")
-  variant = cand(album=name, release_date="2022-01-01")
+  """each of these spellings has to be seen as the expanded cut."""
+  standard = cand(album="Album", release_date="2022-01-01")
+  variant = cand(album=name, release_date="2022-01-02")
 
-  assert choose_release([variant, standard]) is standard
+  assert choose_release([standard, variant]) is variant
 
 
-def test_a_deluxe_is_chosen_when_it_is_the_only_release():
-  deluxe = cand(album="Album (Deluxe)")
+def test_a_standard_album_is_chosen_when_it_is_the_only_release():
+  standard = cand(album="Album")
 
-  assert choose_release([deluxe]) is deluxe
+  assert choose_release([standard]) is standard
 
 
 def test_the_preference_can_be_switched_off():
-  """§7b: set it false to take whichever release the ranking picks."""
-  standard = cand(album="Album", release_date="2022-09-09")
-  deluxe = cand(album="Album (Deluxe)", release_date="2022-09-01")
+  """§7b: set it false to go back to the standard edition's cleaner name.
 
-  assert choose_release([standard, deluxe], prefer_standard_edition=False) is deluxe
+  same date on both, so clause 4 cannot decide it and clause 3 is what is
+  actually under test.
+  """
+  standard = cand(album="Album", release_date="2022-09-09")
+  deluxe = cand(album="Album (Deluxe)", release_date="2022-09-09")
+
+  assert choose_release([standard, deluxe], prefer_expanded_edition=False) is standard
 
 
 # --- clause 4: earliest ------------------------------------------------------

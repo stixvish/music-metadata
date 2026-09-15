@@ -1911,13 +1911,52 @@ a bonus or deluxe edition always has more tracks than the standard album, so
 "most tracks" systematically prefers the variant. "1-track last, then earliest"
 gets both cases right.
 
-**deluxe editions are acceptable, and the default still prefers the standard.**
-the operator is not opposed to a track being attributed to a deluxe release. the
-default is `prefer_standard_edition = true` for one concrete reason: the album
-_name_ is cleaner — `Demons Protected By Angels` rather than
-`Demons Protected By Angels (Bonus Version)` — and that string goes in `TALB` and
-sorts in rekordbox. the track number was identical here (`4/19` vs `4/20`), so
-nothing is lost. set it false to take whichever release the ranking picks.
+**the default now prefers the expanded edition. this was reversed on
+2026-09-15, and the reversal is a measurement, not a taste.**
+
+the old default was `prefer_standard_edition = true`, justified on one claim:
+the album _name_ is cleaner, and the track number is "identical here
+(`4/19` vs `4/20`), so nothing is lost". **the claim does not generalise.** of
+15 library tracks appearing on both a standard and an expanded edition, **10
+shift position**:
+
+```text
+A Boogie Wit da Hoodie — Artist 2.0
+  Cinderella Story    # 2/20  ->  #28/29
+  Calm Down           # 9/20  ->  #21/29
+  King Of My City     #17/20  ->  #13/29
+  Another Day Gone    #10/20  ->  #20/29
+```
+
+`El Dorado` and `i am > i was` do preserve ordering, so both behaviours are
+real. but with numbering unstable either way, a tidier `TALB` string buys
+nothing — and the real cost of the old rule is that it **split one album across
+two names**:
+
+```text
+before                          after
+  El Dorado          4 tracks     El Dorado (Deluxe)   6 tracks
+  El Dorado (Deluxe) 2 tracks
+  Artist 2.0         10 tracks    Artist 2.0 (Deluxe)  15 tracks
+  Artist 2.0 (Deluxe) 5 tracks
+```
+
+a track the operator owns that exists **only** on the expanded edition —
+`Prada`, `Mistakes`, `Bleed` — has nowhere else to go, so the standard-edition
+preference could never apply consistently. the expanded edition is a superset of
+the standard one, so preferring it puts every track of an album under one name
+with one internally consistent numbering, which is what actually sorts in
+rekordbox.
+
+set `prefer_expanded_edition = false` to restore the old behaviour, accepting
+the split for any album whose bonus tracks the operator owns.
+
+**a refinement left unbuilt:** the strictly better rule is "pick the edition
+covering the most of _this library_", decided per album family rather than per
+track. on the measured data it agrees with prefer-expanded everywhere
+(`Artist 2.0` 15 vs 10, `El Dorado` 6 vs 4, `i am > i was` 1 vs 1), so it buys
+nothing today and costs a second pass over the library. worth revisiting only if
+a standard edition is ever found covering more.
 
 **the promo-single clause is load-bearing.** ranking by release date alone picks
 the wrong release for `Kamariya`:
