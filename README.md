@@ -15,31 +15,40 @@ verified master).
 
 ## status
 
-**milestone 2 of 6 — identity and credit.** the spine from M1, plus musicbrainz:
-featured artists are now separated from main artists structurally rather than
-guessed, composers and lyricists are written where musicbrainz names them, and
-every refusal to guess lands in a review queue in the browser.
+**milestone 3 of 6 — completeness.** every track now gets **artwork** from a
+verified release, plus genre and label. the artwork chain refuses to guess: a
+cover is embedded only when the release it came from is the release §7b chose,
+and a track with no verifying candidate keeps what it has and is flagged.
 
-| thing               | state                                                       |
-| ------------------- | ----------------------------------------------------------- |
-| `probe`             | 1,494 files, 1,439 with ISRC — reproduces the baseline      |
-| `resolve`           | spotify ISRC search + musicbrainz credit and work           |
-| `diff` / `apply`    | tagged copies to an output tree; source untouched           |
-| `map`               | `library.toml` with the §9c view flags                      |
-| artist credit       | musicbrainz joinphrases, cross-checked against the filename |
-| G6 agreement        | **90.5%** measured on all 398 featured tracks (gate: 88%)   |
-| composer / lyricist | written where musicbrainz names the role (F52)              |
-| review queue        | flagged tracks in the browser, grouped by gate              |
-| **artwork**         | **not built** — the §7c chain lands in M3                   |
-| **genre, BPM, key** | **not built** — beatport is M4                              |
-| **label**           | **not built** — discogs is M3                               |
-| **acquisition**     | **not built** — tier 0 is M6                                |
+| thing           | state                                                       |
+| --------------- | ----------------------------------------------------------- |
+| `probe`         | 1,494 files, 1,439 with ISRC — reproduces the baseline      |
+| `resolve`       | spotify · musicbrainz · itunes · discogs                    |
+| **artwork**     | verified chain at the album's own master, up to 3000²       |
+| **genre**       | discogs `styles`, falling back to itunes                    |
+| **label**       | discogs `labels[]`, plants and publishers excluded          |
+| artist credit   | musicbrainz joinphrases, cross-checked against the filename |
+| G6 agreement    | **90.5%** measured on all 398 featured tracks (gate: 88%)   |
+| review queue    | flagged tracks in the browser, grouped by gate              |
+| **BPM, key**    | **not built** — beatport is M4                              |
+| **acquisition** | **not built** — tier 0 is M6                                |
 
 what is populated today: title, artist, album, album artist, release date, year,
-track number, disc number, mix name, remixer, original artist, ISRC, and —
-where musicbrainz names the role — composer and lyricist. everything else is
+track number, disc number, mix name, remixer, original artist, ISRC, genre,
+label, artwork, and — where musicbrainz names the role — composer and
+lyricist. everything else is
 deliberately left empty rather than guessed: §7e's position on BPM, applied
 generally.
+
+**on artwork.** the danger is identity, not resolution: an image returned for a
+track is the cover of whichever release the matcher landed on, and that is a
+compilation often enough to matter. every candidate is verified against the
+chosen release before its bytes are used, and the name check **rejects rather
+than coerces** — searching itunes for `Calvin Harris 18 Months` returns `96
+Months`, a different record, and a fuzzy match would embed its cover silently.
+
+apple serves each album's own master, which varies: 3000² for some, 1425² for
+others. the tag records what actually came back, not what was requested.
 
 **on artist credit.** musicbrainz decides _who_ performed; the filename decides
 _which of them is featured_. F53 measured why: on 13 of 398 featured tracks
@@ -159,10 +168,10 @@ uv run pytest -q
 green — see `CLAUDE.md`.
 
 ```sh
-uv run pytest -q           # 322 tests, no network
+uv run pytest -q           # 382 tests, no network
 uv run pytest -q -m live   # hits the real spotify api
 uv run pytest -q -m slow   # probes all 1,494 files against the measured baseline
 ```
 
-the pure modules — `release`, `naming`, `credit`, `output` — are held at 100%
-coverage with a 90% floor. they carry the decisions the spec argued hardest about.
+the pure modules — `release`, `naming`, `credit`, `artwork`, `output` — are held
+at 100% coverage with a 90% floor. they carry the decisions the spec argued hardest about.

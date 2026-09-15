@@ -19,11 +19,14 @@ from pathlib import Path
 
 from music_metadata import library_map
 from music_metadata.arbitrate import Resolved, arbitrate
-from music_metadata.config import DEFAULT_SIDECAR, load_env, require
+from music_metadata.artwork import Artwork, resolve_artwork
+from music_metadata.config import DEFAULT_SIDECAR, get, load_env, require
 from music_metadata.output import Level, emit
 from music_metadata.probe import ProbedFile, probe_tree
 from music_metadata.release import ReleaseCandidate, choose_release
 from music_metadata.sources.base import SourceError
+from music_metadata.sources.discogs import Discogs, release_from_raw
+from music_metadata.sources.itunes import Itunes, releases_from_raw
 from music_metadata.sources.musicbrainz import (
   MusicBrainz,
   Work,
@@ -65,6 +68,9 @@ def _resolved_for(store: Store, probed: ProbedFile) -> Resolved:
   """
   credit = None
   work: Work | None = None
+  itunes_release = None
+  discogs_release = None
+  artwork: Artwork | None = None
   if probed.isrc:
     recording = recording_from_raw(store.get_raw(probed.isrc, "musicbrainz"))
     if recording is not None:
@@ -72,8 +78,50 @@ def _resolved_for(store: Store, probed: ProbedFile) -> Resolved:
     raw_work = store.get_raw(probed.isrc, "work")
     if raw_work is not None:
       work = work_from_raw(raw_work)
+    itunes_raw = store.get_raw(probed.isrc, "itunes")
+    if itunes_raw is not None:
+      releases = releases_from_raw(itunes_raw)
+      itunes_release = releases[0] if releases else None
+    discogs_release = release_from_raw(store.get_raw(probed.isrc, "discogs"))
+    artwork = _artwork_from_store(store, probed.isrc)
+
   return arbitrate(
-    probed, _candidates_for(store, probed), musicbrainz=credit, work=work
+    probed,
+    _candidates_for(store, probed),
+    musicbrainz=credit,
+    work=work,
+    itunes=itunes_release,
+    discogs=discogs_release,
+    artwork=artwork,
+  )
+
+
+def _artwork_from_store(store: Store, isrc: str) -> Artwork | None:
+  """Load the artwork bytes already fetched for a recording.
+
+  §9a: 3-4 GB of covers are fetched once. re-reading them from disk is what
+  makes `apply` re-runnable without re-downloading the library's artwork.
+
+  Args:
+    store: the sidecar.
+    isrc: the recording's ISRC.
+
+  Returns:
+    The artwork, or None when none was cached.
+  """
+  rows = store.query("SELECT * FROM artwork WHERE isrc = ?", (isrc,))
+  if not rows or not rows[0]["local_path"]:
+    return None
+  path = Path(rows[0]["local_path"])
+  if not path.is_file():
+    return None
+  return Artwork(
+    data=path.read_bytes(),
+    mime="image/jpeg",
+    width=int(rows[0]["width"] or 0),
+    candidate=rows[0]["source_release"] or "cached",
+    source_release=rows[0]["source_release"] or "",
+    url=rows[0]["url_template"] or "",
   )
 
 
@@ -178,7 +226,13 @@ def cmd_resolve(args: argparse.Namespace) -> int:
 
     spotify = Spotify(require("SPOTIFY_CLIENT_ID"), require("SPOTIFY_CLIENT_SECRET"))
     musicbrainz = MusicBrainz()
+    itunes = Itunes()
+    discogs_token = get("DISCOGS_TOKEN")
+    discogs = Discogs(discogs_token) if discogs_token else None
+    art_dir = args.sidecar.parent / "artwork"
+    art_dir.mkdir(parents=True, exist_ok=True)
     fetched = cached = mb_hits = mb_misses = mb_errors = 0
+    art_hits = art_misses = 0
     try:
       for index, row in enumerate(rows, start=1):
         isrc = row["isrc_from_tag"]
@@ -215,6 +269,52 @@ def cmd_resolve(args: argparse.Namespace) -> int:
               mb_errors += 1
               emit(f"  musicbrainz work failed for {isrc}: {exc}", level=Level.WARN)
 
+        # tiers 2 and 3: itunes for the artwork chain and a genre fallback,
+        # discogs for label. both are optional — a failure flags the track
+        # rather than stopping the run (§5's rule applied beyond beatport).
+        chosen = choose_release(result.candidates)
+        if chosen is not None:
+          album_artist = ", ".join(chosen.album_artists)
+          try:
+            # the album search doubles as the genre fallback source (§7), so
+            # its payload is cached rather than thrown away after the chain.
+            album_hits = itunes.search_albums(
+              f"{album_artist} {chosen.album_name}".strip()
+            )
+            store.put_raw(isrc, "itunes", album_hits.raw)
+            art = resolve_artwork(
+              itunes, chosen.album_name, album_artist, chosen.track_name
+            )
+          except SourceError as exc:
+            art = None
+            emit(f"  itunes unavailable for {isrc}: {exc}", level=Level.WARN)
+
+          if art is None:
+            art_misses += 1
+          else:
+            art_hits += 1
+            destination = art_dir / f"{isrc}.jpg"
+            destination.write_bytes(art.data)
+            store.put_artwork(
+              isrc=isrc,
+              source_release=art.source_release,
+              url_template=art.url,
+              width=art.width,
+              sha256=art.sha256,
+              local_path=str(destination),
+            )
+
+          if discogs is not None:
+            try:
+              release_id, raw_search = discogs.search_release_id(
+                album_artist, chosen.album_name
+              )
+              if release_id is not None:
+                _, raw_release = discogs.release(release_id)
+                store.put_raw(isrc, "discogs", raw_release)
+            except SourceError as exc:
+              emit(f"  discogs unavailable for {isrc}: {exc}", level=Level.WARN)
+
         fetched += 1
         credited = "credit" if recording else "no-credit"
         emit(
@@ -224,9 +324,13 @@ def cmd_resolve(args: argparse.Namespace) -> int:
     finally:
       spotify.close()
       musicbrainz.close()
+      itunes.close()
+      if discogs is not None:
+        discogs.close()
 
     emit(f"resolved {fetched} fetched, {cached} already cached")
     emit(f"musicbrainz {mb_hits} found, {mb_misses} missing, {mb_errors} unavailable")
+    emit(f"artwork {art_hits} verified, {art_misses} unverified (G5)")
   return 0
 
 
