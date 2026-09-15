@@ -39,7 +39,11 @@ from music_metadata.sources.musicbrainz import (
   recording_from_raw,
   work_from_raw,
 )
-from music_metadata.sources.spotify import Spotify, candidates_from_raw
+from music_metadata.sources.spotify import (
+  Spotify,
+  SpotifyResult,
+  candidates_from_raw,
+)
 from music_metadata.store import Store
 from music_metadata.tag import Tags, read_tags, write_tags
 from music_metadata.verify import (
@@ -287,13 +291,28 @@ def cmd_resolve(args: argparse.Namespace) -> int:
     try:
       for index, row in enumerate(rows, start=1):
         isrc = row["isrc_from_tag"]
-        cached_already = store.get_raw(isrc, "spotify") is not None
-        if cached_already and not args.refetch:
+
+        # **each source is cached independently.** §9a: only rows with no raw
+        # payload are re-fetched. checking one source and skipping the whole
+        # track would mean a source added later — beatport, once a cookie
+        # exists — could never backfill without discarding everything else.
+        def missing(service: str, isrc: str = isrc) -> bool:
+          return args.refetch or store.get_raw(isrc, service) is None
+
+        if not any(
+          missing(service)
+          for service in ("spotify", "musicbrainz", "itunes", "discogs", "beatport")
+        ):
           cached += 1
           continue
 
-        result = spotify.search_isrc(isrc)
-        store.put_raw(isrc, "spotify", result.raw)
+        if missing("spotify"):
+          result = spotify.search_isrc(isrc)
+          store.put_raw(isrc, "spotify", result.raw)
+        else:
+          result = SpotifyResult(
+            candidates=candidates_from_raw(store.get_raw(isrc, "spotify")), raw=None
+          )
 
         # tier 2. a miss here is normal (F31), and so is the service being
         # briefly unavailable — musicbrainz 503s routinely (F30/F52). neither
@@ -301,18 +320,21 @@ def cmd_resolve(args: argparse.Namespace) -> int:
         # pipeline is not specific to beatport, and losing an hour of resolved
         # identities to one bad minute would be the expensive failure.
         recording = None
-        try:
-          recording, raw_mb = musicbrainz.recording_for_isrc(isrc)
-          store.put_raw(isrc, "musicbrainz", raw_mb)
-        except SourceError as exc:
-          mb_errors += 1
-          emit(f"  musicbrainz unavailable for {isrc}: {exc}", level=Level.WARN)
+        if missing("musicbrainz"):
+          try:
+            recording, raw_mb = musicbrainz.recording_for_isrc(isrc)
+            store.put_raw(isrc, "musicbrainz", raw_mb)
+          except SourceError as exc:
+            mb_errors += 1
+            emit(f"  musicbrainz unavailable for {isrc}: {exc}", level=Level.WARN)
+        else:
+          recording = recording_from_raw(store.get_raw(isrc, "musicbrainz"))
 
         if recording is None:
           mb_misses += 1
         else:
           mb_hits += 1
-          if recording.work_id:
+          if recording.work_id and missing("work"):
             try:
               _, raw_work = musicbrainz.work(recording.work_id)
               store.put_raw(isrc, "work", raw_work)
@@ -326,22 +348,26 @@ def cmd_resolve(args: argparse.Namespace) -> int:
         chosen = choose_release(result.candidates)
         if chosen is not None:
           album_artist = ", ".join(chosen.album_artists)
-          try:
-            # the album search doubles as the genre fallback source (§7), so
-            # its payload is cached rather than thrown away after the chain.
-            album_hits = itunes.search_albums(
-              f"{album_artist} {chosen.album_name}".strip()
-            )
-            store.put_raw(isrc, "itunes", album_hits.raw)
-            art = resolve_artwork(
-              itunes, chosen.album_name, album_artist, chosen.track_name
-            )
-          except SourceError as exc:
-            art = None
-            emit(f"  itunes unavailable for {isrc}: {exc}", level=Level.WARN)
+          art = None
+          attempted_artwork = missing("itunes")
+          if attempted_artwork:
+            try:
+              # the album search doubles as the genre fallback source (§7), so
+              # its payload is cached rather than thrown away after the chain.
+              album_hits = itunes.search_albums(
+                f"{album_artist} {chosen.album_name}".strip()
+              )
+              store.put_raw(isrc, "itunes", album_hits.raw)
+              art = resolve_artwork(
+                itunes, chosen.album_name, album_artist, chosen.track_name
+              )
+            except SourceError as exc:
+              emit(f"  itunes unavailable for {isrc}: {exc}", level=Level.WARN)
 
           if art is None:
-            art_misses += 1
+            # a track whose artwork was already fetched is not a miss; only
+            # count an attempt that found nothing (G5).
+            art_misses += attempted_artwork
           else:
             art_hits += 1
             destination = art_dir / f"{isrc}.jpg"
@@ -355,7 +381,7 @@ def cmd_resolve(args: argparse.Namespace) -> int:
               local_path=str(destination),
             )
 
-          if discogs is not None:
+          if discogs is not None and missing("discogs"):
             try:
               release_id, raw_search = discogs.search_release_id(
                 album_artist, chosen.album_name
@@ -368,7 +394,7 @@ def cmd_resolve(args: argparse.Namespace) -> int:
 
         # tier 3. never raises; a miss and an outage look the same from here,
         # which is what makes the tier droppable (§5).
-        if beatport is not None:
+        if beatport is not None and missing("beatport"):
           parsed_title = split_title(chosen.track_name) if chosen else None
           artist = chosen.track_artists[0] if chosen and chosen.track_artists else ""
           if parsed_title is not None:
