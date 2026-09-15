@@ -268,3 +268,43 @@ def test_only_the_first_separator_splits():
 
   assert artist == "A"
   assert title == "B - C"
+
+
+# --- F39: ` (2)` is a duplication marker, not a mix name ---------------------
+
+
+def test_a_bare_number_in_parentheses_is_not_a_mix():
+  """F39: the ` (2)` suffix is a symptom, not the test. reading it as a mix
+  would write `TIT3 = "2"`, and all three class-A duplicates carry one."""
+  got = split_title("CHICA 305 (2)")
+
+  assert got.mix is None
+  assert got.name == "CHICA 305 (2)"
+
+
+def test_a_duplication_marker_survives_a_render():
+  got = split_title("CHICA 305 (2)")
+
+  assert render_title(got.name, got.features, got.mix) == "CHICA 305 (2)"
+
+
+def test_a_feature_and_a_duplication_marker_together():
+  got = split_title("My Business (ft. Future) (2)")
+
+  assert got.features == ("Future",)
+  assert got.mix is None
+
+
+def test_a_real_mix_is_still_read():
+  assert split_title("Blessings (Odd Mob Remix)").mix == "Odd Mob Remix"
+
+
+def test_a_mix_that_merely_contains_a_number_is_still_a_mix():
+  assert split_title("Track (Part 2 Remix)").mix == "Part 2 Remix"
+
+
+def test_removing_a_feature_does_not_leave_a_double_space():
+  got = split_title("My Business (ft. Future) (2)")
+
+  assert got.name == "My Business (2)"
+  assert "  " not in got.name

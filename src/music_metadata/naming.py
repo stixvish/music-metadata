@@ -53,8 +53,13 @@ _TRAILING_PAREN = re.compile(r"\s*\((?P<inner>[^)]+)\)\s*$")
 _DASH_SUFFIX = re.compile(r"^(?P<name>.+?)\s+-\s+(?P<mix>[^-]+)$")
 
 # a parenthetical that is part of the work's own name, not a mix or a feature.
-# §7b removes these by choosing the right release; §7a leaves them visible.
-_NOT_A_MIX = re.compile(r"^(from|from the)\b", re.IGNORECASE)
+# §7b removes `(From "…")` by choosing the right release; §7a leaves it visible.
+#
+# a bare number is the other case: `CHICA 305 (2)` is a **filename duplication
+# marker**, not a mix. F39 is explicit that the ` (2)` suffix is "a symptom, not
+# the test" — reading it as a mix would write `TIT3 = "2"`, which is nonsense,
+# and all three of the library's class-A duplicates carry one.
+_NOT_A_MIX = re.compile(r"^(from|from the)\b|^\d+$", re.IGNORECASE)
 
 _ARTIST_SPLIT = re.compile(r"\s*(?:,|&|\band\b)\s*", re.IGNORECASE)
 
@@ -156,7 +161,11 @@ def split_title(raw: str) -> ParsedTitle:
   match = _FEATURE.search(working)
   if match is not None:
     features = _split_features(match.group("who"))
-    working = (working[: match.start()] + working[match.end() :]).strip()
+    # collapse the gap the excised parenthetical leaves behind, or a name like
+    # `My Business (ft. Future) (2)` renders with a double space.
+    working = re.sub(
+      r"\s{2,}", " ", working[: match.start()] + working[match.end() :]
+    ).strip()
 
   mix: str | None = None
   bracket = _TRAILING_BRACKET.search(working)
@@ -168,6 +177,11 @@ def split_title(raw: str) -> ParsedTitle:
     if paren is not None and not _NOT_A_MIX.match(paren.group("inner").strip()):
       mix = paren.group("inner").strip()
       working = working[: paren.start()].strip()
+
+  if mix is not None and _NOT_A_MIX.match(mix):
+    # a bracketed duplication marker, same as the parenthetical case.
+    working = f"{working} [{mix}]".strip()
+    mix = None
 
   if mix is None:
     dash = _DASH_SUFFIX.match(working)
