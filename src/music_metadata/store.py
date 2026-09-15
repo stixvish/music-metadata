@@ -56,7 +56,11 @@ _ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
 # search-derived link we actually produce is beatport's, and its `Match` already
 # carries `matched_by` inline. dropping is safe **because it was never written
 # to** — a table holding real rows would need a migration, not a DROP.
-_DROPPED_TABLES: tuple[str, ...] = ("service_ids",)
+# `map_generated` recorded what the resolver last wrote, so a single file could
+# tell a hand-edit from its own output. §9b now keeps the two in separate files,
+# which decides it by *which file a value is in* — no history required, and no
+# way for an algorithm change to fake an edit.
+_DROPPED_TABLES: tuple[str, ...] = ("service_ids", "map_generated")
 
 
 def _migrate(conn: sqlite3.Connection) -> None:
@@ -336,36 +340,6 @@ class Store:
     )
 
   # --- library.toml provenance (§9b) -----------------------------------------
-
-  def put_generated(self, audio_md5: str, values: dict[str, str]) -> None:
-    """Record what the resolver just wrote into `library.toml` for one track.
-
-    Args:
-      audio_md5: the track's decoded-audio md5, which keys the map.
-      values: the generated field values.
-    """
-    with self._lock:
-      self.conn.executemany(
-        """INSERT INTO map_generated (audio_md5, field, value)
-           VALUES (?, ?, ?)
-           ON CONFLICT(audio_md5, field) DO UPDATE SET value = excluded.value""",
-        [(audio_md5, field, value) for field, value in values.items()],
-      )
-      self.conn.commit()
-
-  def get_generated(self, audio_md5: str) -> dict[str, str]:
-    """Return what the resolver last generated for one track.
-
-    Args:
-      audio_md5: the track's decoded-audio md5.
-
-    Returns:
-      Field to value. Empty when the track has never been generated.
-    """
-    rows = self.query(
-      "SELECT field, value FROM map_generated WHERE audio_md5 = ?", (audio_md5,)
-    )
-    return {r["field"]: r["value"] for r in rows}
 
   # --- the review queue (§14) ------------------------------------------------
 
