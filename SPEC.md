@@ -1439,6 +1439,68 @@ one thing soundcloud gives that no service does: **the uploader's own BPM tag**
 §7e leaves BPM empty rather than guessing, and for an edit that nothing else
 lists, the producer's own value is the best evidence available.
 
+**F59 — the acoustic fingerprint matches where the audio hash cannot, which is
+the whole reason it exists.** measured 2026-09-15 on F57's cross-format pair —
+the beatport `.wav` and the youtube-derived `.aiff` whose decoded-audio md5s are
+completely different:
+
+```text
+chromaprint (fpcalc -raw), 948 samples each
+  exactly equal samples   906 / 948   (95.57%)
+  bit error rate          0.1450%
+```
+
+acoustid's match threshold sits around 5-10% BER, so **0.145% is an
+overwhelming match**. the two signals answer different questions and the
+difference is not a defect in either:
+
+```text
+audio md5     "are these the same bytes?"        no  — one went through a lossy step
+chromaprint   "are these the same recording?"    yes — 99.855%
+```
+
+chromaprint is built to survive exactly this: re-encoding, bitrate changes,
+lossy round-trips. **so the md5 divergence is an argument _for_ fingerprinting,
+not against it** — it is the case F44's hash provably cannot decide, and the one
+acoustid submission would resolve. §15's fingerprint column stands.
+
+this also gives class D (F57) a stronger test than duration plus title: a
+fingerprint comparison decides the same pair at 99.855% instead of inferring it
+from a filename. duration and title remain the cheap pre-filter, since computing
+fingerprints for 1,501 files to find 2 pairs is the wrong order of work.
+
+**F60 — soundcloud go+ raises the fallback but never beats the original
+file.** `yt-dlp`'s extractor ranks its formats:
+
+```text
+quality 10   "download"      the uploader's original file (F58's three conditions)
+quality  5   premium         256 kbps AAC, go+ only        (is_premium = quality == 'hq')
+quality  0   >=160 kbps      free tier
+quality -1   everything else  opus 64 kbps VBR
+```
+
+go+ streaming is **256 kbps AAC**, gated on both a subscription _and_ the track
+having been uploaded losslessly. it is better than the youtube path and better
+than the free tier's 96/160k — but it is still a lossy transcode, and `-f
+bestaudio` will prefer the original download over it whenever one exists.
+
+so go+ buys a better **fallback**, not a better best case. it is worth having
+for tracks with the download button off, and the cookie mechanism is the one
+already built for youtube and beatport (`--cookies-from-browser`), so nothing
+new is needed to use it.
+
+**F61 — `service_ids` is retired.** the table recorded how each service link was
+matched (F9's exact-vs-search distinction), but **nothing ever wrote to it**.
+the only search-derived link the pipeline actually produces is beatport's, and
+`Match.matched_by` already carries that inline — the table was a second home for
+a fact that has one. it is dropped on open, and only when empty: a table holding
+rows would be a migration, not a deletion.
+
+the distinction it encoded is still live and still matters (F22: beatport's ISRC
+lookup fails on all 9 remixes, so those fall back to search). **note that
+`Match.matched_by` is set but never read** — surfacing it, so a search-matched
+beatport genre is visibly less certain than an ISRC-matched one, is open work.
+
 **F8 — rate limits are gentler in practice than documented.**
 published Starter is 6 req/min ([musicfetch.io](https://musicfetch.io/) pricing,
 checked 2026-09-14). measured: **20 sequential requests at 1 req/s, all HTTP

@@ -18,7 +18,6 @@ def test_schema_creates_every_table_in_spec_9a(store):
   assert {
     "files",
     "recordings",
-    "service_ids",
     "fingerprints",
     "artwork",
     "jobs",
@@ -119,21 +118,6 @@ def test_job_records_an_error(store):
   store.update_job(job_id, state="failed", error="cookies rotated mid-batch")
 
   assert store.get_job(job_id)["error"] == "cookies rotated mid-batch"
-
-
-def test_service_id_is_recorded_with_how_it_matched(store):
-  store.put_service_id(
-    isrc="GBARL2501127",
-    service="beatport",
-    service_id="20819013",
-    url="https://beatport.com/track/blessings/20819013",
-    matched_by="search",
-    verified=True,
-  )
-
-  row = store.query("SELECT * FROM service_ids")[0]
-  assert row["matched_by"] == "search"
-  assert row["verified"] == 1
 
 
 def test_artwork_row_records_provenance(store):
@@ -273,3 +257,41 @@ def test_migrating_is_idempotent(tmp_path):
     columns = {r[1] for r in store.conn.execute("PRAGMA table_info(artwork)")}
 
   assert "candidate" in columns
+
+
+def test_a_retired_table_is_dropped_from_an_older_database(tmp_path):
+  """service_ids was never written to, so removing it loses nothing."""
+  import sqlite3
+
+  path = tmp_path / "old.sqlite"
+  conn = sqlite3.connect(path)
+  conn.execute("CREATE TABLE service_ids (isrc TEXT, service TEXT)")
+  conn.commit()
+  conn.close()
+
+  with Store.open(path) as store:
+    assert (
+      store.query(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='service_ids'"
+      )
+      == []
+    )
+
+
+def test_a_retired_table_holding_rows_is_left_alone(tmp_path):
+  """the drop is an assumption about emptiness, so it verifies it.
+
+  if something did write to the table after all, that is a migration to be
+  designed — never a silent deletion of the operator's rows.
+  """
+  import sqlite3
+
+  path = tmp_path / "old.sqlite"
+  conn = sqlite3.connect(path)
+  conn.execute("CREATE TABLE service_ids (isrc TEXT, service TEXT)")
+  conn.execute("INSERT INTO service_ids VALUES ('X', 'beatport')")
+  conn.commit()
+  conn.close()
+
+  with Store.open(path) as store:
+    assert store.query("SELECT COUNT(*) AS n FROM service_ids")[0]["n"] == 1

@@ -39,19 +39,6 @@ CREATE TABLE IF NOT EXISTS recordings (
 CREATE INDEX IF NOT EXISTS recordings_source_version
   ON recordings (source_version);
 
--- the equivalence map: which service id we matched, and how much to trust it.
--- matched_by records whether the id came from an exact ISRC lookup or a text
--- search, because F9 showed search-derived links are not ISRC-verified.
-CREATE TABLE IF NOT EXISTS service_ids (
-  isrc       TEXT NOT NULL,
-  service    TEXT NOT NULL,
-  service_id TEXT,
-  url        TEXT,
-  matched_by TEXT,
-  verified   INTEGER NOT NULL DEFAULT 0,
-  PRIMARY KEY (isrc, service)
-);
-
 -- computed lazily, kept forever. the MBID and the fingerprint live here and
 -- never in ID3, so the audio files stay clean and a future acoustid pass stays
 -- cheap (§15).

@@ -51,8 +51,16 @@ _ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
 )
 
 
+# tables this schema used to create and no longer does. `service_ids` recorded
+# how each service link was matched, but nothing ever wrote to it: the only
+# search-derived link we actually produce is beatport's, and its `Match` already
+# carries `matched_by` inline. dropping is safe **because it was never written
+# to** — a table holding real rows would need a migration, not a DROP.
+_DROPPED_TABLES: tuple[str, ...] = ("service_ids",)
+
+
 def _migrate(conn: sqlite3.Connection) -> None:
-  """Add any column this schema has gained since the database was created.
+  """Bring an existing database up to the current schema.
 
   Args:
     conn: the open connection.
@@ -61,6 +69,18 @@ def _migrate(conn: sqlite3.Connection) -> None:
     existing = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
     if existing and column not in existing:
       conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {kind}")  # noqa: S608 — names are literals above
+  for table in _DROPPED_TABLES:
+    # a fresh database never had it; only an older one needs the drop.
+    present = conn.execute(
+      "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (table,)
+    ).fetchone()
+    if present is None:
+      continue
+    rows = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()  # noqa: S608 — names are literals above
+    # **never drop a table that holds rows.** it was retired because nothing
+    # wrote to it; if something did, that is a migration, not a deletion.
+    if rows is not None and rows[0] == 0:
+      conn.execute(f"DROP TABLE {table}")  # noqa: S608 — names are literals above
   conn.commit()
 
 
@@ -262,38 +282,6 @@ class Store:
     return [r["isrc"] for r in rows]
 
   # --- service ids, artwork, fingerprints ------------------------------------
-
-  def put_service_id(
-    self,
-    isrc: str,
-    service: str,
-    service_id: str | None = None,
-    url: str | None = None,
-    matched_by: str | None = None,
-    verified: bool = False,
-  ) -> None:
-    """Record which id a service gave this recording, and how it was matched.
-
-    Args:
-      isrc: the recording's ISRC.
-      service: the service name.
-      service_id: the service's own identifier.
-      url: a link to the listing.
-      matched_by: how the match was made, such as "isrc" or "search". F9 showed
-        search-derived links are not ISRC-verified, so this is not cosmetic.
-      verified: whether the match was confirmed against the ISRC.
-    """
-    self.execute(
-      """INSERT INTO service_ids
-           (isrc, service, service_id, url, matched_by, verified)
-         VALUES (?, ?, ?, ?, ?, ?)
-         ON CONFLICT(isrc, service) DO UPDATE SET
-           service_id = excluded.service_id,
-           url        = excluded.url,
-           matched_by = excluded.matched_by,
-           verified   = excluded.verified""",
-      (isrc, service, service_id, url, matched_by, int(verified)),
-    )
 
   def put_artwork(
     self,
