@@ -1181,10 +1181,38 @@ re-measured under that policy:
   G6                      90.5%   (gate target >= 88%, set from this measurement)
 ```
 
-the 34 that remain are all genuine personnel differences — 19 where musicbrainz
-is missing a credited artist, 7 where it names co-producers the filename omits,
-8 where the names themselves differ. those are decisions, which is what the
-review queue is for.
+**what G6 is really comparing.** it cross-checks musicbrainz against the
+_filename_, and the filename is effectively what the library already says:
+
+```text
+featured tracks                                    398
+  filename artist identical to the existing TPE1   397   (99.7%)
+  existing tags put the feature in the title       398   (100%)
+  existing tags put the feature in the artist        0
+```
+
+so G6 is not an abstract source comparison — it measures **how often musicbrainz
+disagrees with the tags the operator already has**, and §7a's chosen shape
+(feature in the title, option A) is the shape those tags are already in. the one
+mismatch is `David Guetta & Kid Cudi - Memories (ft. Kid Cudi)`, where the
+filename names Kid Cudi as both a main artist and a feature.
+
+the 34 disagreements that survive the boundary rule break down as:
+
+| n   | what musicbrainz does                | note                                    |
+| --- | ------------------------------------ | --------------------------------------- |
+| 19  | **drops** an artist the library has  | accepting it would lose a credit        |
+| 7   | **adds** an artist the library lacks | usually a co-producer                   |
+| 6   | both drops and adds                  |                                         |
+| 2   | spells a name differently            | `DJ Carnage`/`Carnage`, `Lemar`/`Lamar` |
+
+**in 19 of 34 cases, accepting musicbrainz would remove a credit that is already
+there.** that is the strongest argument against auto-resolving toward
+musicbrainz, and it is why the queue exists: the default has to be a human
+looking at both, not a rule preferring whichever source is nominally more
+structured. the two spelling cases are worth flagging rather than folding away —
+`Damian Lamar Hudson` vs `Damian Lemar Hudson` is a likely typo in the library,
+which is exactly the kind of thing review should catch.
 
 **F8 — rate limits are gentler in practice than documented.**
 published Starter is 6 req/min ([musicfetch.io](https://musicfetch.io/) pricing,
