@@ -36,6 +36,7 @@ from dataclasses import dataclass
 
 import httpx
 
+from music_metadata.release import strip_edition
 from music_metadata.sources.itunes import Itunes, ItunesRelease
 
 # §7c / OQ-1: 3000² is the decision.
@@ -139,8 +140,13 @@ def matches_release(
   if not candidate.artwork_url_100:
     return False
 
-  want_album = _fold(album_name)
-  got_album = _fold(candidate.collection_name)
+  # **compare album *families*, not exact names.** the edition qualifier is
+  # the one part of the name that does not identify the record: `El Dorado`
+  # and `El Dorado (Deluxe)` are the same album, and apple's artwork is a
+  # per-album master either way (F54). without this, the name §7b chose could
+  # never match the name itunes indexes.
+  want_album = _fold(strip_edition(album_name))
+  got_album = _fold(strip_edition(candidate.collection_name))
   if not want_album or not got_album:
     return False
   # the result may be longer than what we asked for, never shorter.
@@ -270,10 +276,13 @@ def resolve_artwork(
     embedded art and G5 flags the track, rather than substituting an
     unverified image.
   """
+  # the edition qualifier is stripped from the *search term* because itunes
+  # returns nothing for it; the chosen album name is still what gets verified
+  # against, and still what lands in the tag.
   searches = (
     (
       CANDIDATE_ALBUM_SEARCH,
-      f"{album_artist} {album_name}".strip(),
+      f"{album_artist} {strip_edition(album_name)}".strip(),
       itunes.search_albums,
     ),
     (

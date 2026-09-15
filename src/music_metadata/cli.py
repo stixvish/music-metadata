@@ -29,7 +29,7 @@ from music_metadata.dedup import TrackFile, preference_key
 from music_metadata.naming import output_filename, split_title
 from music_metadata.output import Level, emit
 from music_metadata.probe import ProbedFile, probe_tree
-from music_metadata.release import ReleaseCandidate, choose_release
+from music_metadata.release import ReleaseCandidate, choose_release, strip_edition
 from music_metadata.sources.base import RateLimitedError, SourceError
 from music_metadata.sources.beatport import Beatport, Match, classify, tracks_from_raw
 from music_metadata.sources.bp_auth import CookieSessionProvider, NullProvider
@@ -513,8 +513,10 @@ def cmd_resolve(args: argparse.Namespace) -> int:
             try:
               # the album search doubles as the genre fallback source (§7), so
               # its payload is cached rather than thrown away after the chain.
+              # stripped for the same reason `resolve_artwork` strips it:
+              # itunes returns nothing for a name carrying `(Deluxe)`.
               album_hits = itunes.search_albums(
-                f"{album_artist} {chosen.album_name}".strip()
+                f"{album_artist} {strip_edition(chosen.album_name)}".strip()
               )
               store.put_raw(isrc, "itunes", album_hits.raw)
               # **candidate C needs the image spotify already gave us** (§7c).

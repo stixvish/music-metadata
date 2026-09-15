@@ -360,3 +360,45 @@ def test_an_empty_search_term_is_skipped():
   resolve_artwork(it, "", "", "", fetch=always(JPEG))
 
   assert it.terms == []
+
+
+def test_an_edition_qualifier_is_stripped_from_the_search_term():
+  """measured: itunes returns 0 results for a name carrying `(Deluxe)`.
+
+  `"24kGoldn El Dorado (Deluxe)"` finds nothing; `"24kGoldn El Dorado"` finds
+  the album. so the qualifier has to come off the term, and this is why the
+  operator's `Prada` had no artwork while a 3000px cover was available.
+  """
+  seen = []
+
+  class Recording:
+    def search_albums(self, term):
+      seen.append(term)
+      return type("R", (), {"releases": []})()
+
+    def search_songs(self, term):
+      seen.append(term)
+      return type("R", (), {"releases": []})()
+
+  resolve_artwork(Recording(), "El Dorado (Deluxe)", "24kGoldn", "Prada")
+
+  assert seen[0] == "24kGoldn El Dorado"
+
+
+def test_a_standard_edition_result_verifies_a_deluxe_choice():
+  """the edition qualifier does not identify the record.
+
+  §7b deliberately chooses the expanded edition, and itunes indexes the album
+  under its plain name. refusing that match leaves the track with no artwork
+  at all, which is strictly worse — apple's cover is a per-album master (F54).
+  """
+  standard = release(name="El Dorado", artist="24kGoldn")
+
+  assert matches_release(standard, "El Dorado (Deluxe)", "24kGoldn")
+
+
+def test_a_different_album_still_does_not_verify():
+  """widening on the edition must not widen onto a different record."""
+  other = release(name="96 Months", artist="Calvin Harris")
+
+  assert not matches_release(other, "18 Months", "Calvin Harris")
