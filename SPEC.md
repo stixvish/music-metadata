@@ -1516,6 +1516,42 @@ populated it.
 **`Match.matched_by` is set but never read.** it is retained because it is free
 and honest, but nothing depends on it.
 
+**F62 — OQ-12 resolved: `MUSICMATCH_TOKEN` is the musicfetch token.** the name
+looked like it belonged to a different service. measured 2026-09-15 against
+`api.musicfetch.io`:
+
+```text
+x-token: <MUSICMATCH_TOKEN>        HTTP 200
+Authorization: Bearer <same>       HTTP 401  {"message": "x-token header required"}
+```
+
+so the credential is correct and only the variable name is misleading. it is
+left as-is rather than renamed, because renaming it would break the operator's
+existing `.env` for no functional gain; this finding is the documentation.
+
+**and F19 is confirmed, with one caveat it did not record: a youtube _video_ is
+not a youtube music _track_.**
+
+```text
+Eo-KmOd3i7s  "*NSYNC - Bye Bye Bye (Official Video)"  -> no isrc, youtube services only
+fxHjlCBHuzA  "Bye Bye Bye" by *NSYNC                  -> USJI10000001
+```
+
+an official-video upload is a separate entity that musicfetch cannot map to a
+release, so F19's 8-of-8 holds for track links and not for video links. the
+distinction is invisible in a browser — both are "the song on youtube" — so
+`tools/yt_isrc.py` detects the case (a result carrying only `youtube*` services)
+and says to use the track link, rather than reporting a failed lookup.
+
+**a recovered ISRC is checked before it is written.** G10's rule does not care
+where an ISRC came from, and pasting the wrong link is the easy mistake when
+working through 55 tracks by hand:
+
+```text
+SKIP  Becky Hill - My Heart Goes: USJI10000001 is 200s but the file is 149s
+      (51s apart) — wrong track? (G10)
+```
+
 **F8 — rate limits are gentler in practice than documented.**
 published Starter is 6 req/min ([musicfetch.io](https://musicfetch.io/) pricing,
 checked 2026-09-14). measured: **20 sequential requests at 1 req/s, all HTTP

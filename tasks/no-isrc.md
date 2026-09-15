@@ -24,6 +24,32 @@ leave `isrc` empty and hand-edit `title`, `artist` and `album` instead. The
 same preservation rule applies, and the track stops being flagged once the
 fields it needs are present.
 
+## the fast way: recover it from a YouTube link
+
+`tools/yt_isrc.py` turns a YouTube Music link into an ISRC (F19), and writes it
+straight into `library.toml`:
+
+```bash
+# check one
+uv run python tools/yt_isrc.py look "https://music.youtube.com/watch?v=m2zUrruKjDQ"
+#   USIR20400274  The Killers — Mr. Brightside
+
+# fill many: one `<filename><TAB><url>` line each
+uv run python tools/yt_isrc.py fill pairs.txt
+```
+
+**Use the YouTube _Music_ link, not the video link.** An official-video upload
+is a different entity and resolves to no release; the tool says so rather than
+reporting a failure.
+
+Nothing is written unless the recovered ISRC's duration matches the file within
+5s, so a mispasted link is caught rather than tagged:
+
+```text
+SKIP  Becky Hill - My Heart Goes: USJI10000001 is 200s but the file is 149s
+      (51s apart) — wrong track? (G10)
+```
+
 ## the list
 
 | #   | file                                                                                 | duration | md5 (control-F this)               | search                                                                                                                         |
