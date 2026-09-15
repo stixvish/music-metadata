@@ -29,6 +29,13 @@ DEFAULT_TIMEOUT = httpx.Timeout(connect=10.0, read=30.0, write=10.0, pool=10.0)
 _RETRYABLE = {429, 500, 502, 503, 504}
 _BACKOFF_BASE = 1.0
 
+# **the longest we will honour a server's `Retry-After`.** a service asking us
+# to wait an hour is telling us to go away, and obeying it parks the whole run:
+# a 1,494-track pass sleeping on one track helps nobody, and the pipeline is
+# built so that a source contributing nothing is survivable (§5). beyond this we
+# stop retrying and let the call fail, which the caller already handles.
+MAX_RETRY_AFTER_S = 60.0
+
 
 class SourceError(RuntimeError):
   """raised when a source fails in a way the caller cannot treat as a miss."""
@@ -146,11 +153,14 @@ class Source:
       attempt: 1-based attempt number, used for exponential backoff.
       retry_after: the `Retry-After` header, when the service sent one.
     """
-    if retry_after is not None:
-      try:
-        self._sleep(float(retry_after))
-      except ValueError:
-        # a Retry-After can be an HTTP date; fall back to our own schedule.
-        self._sleep(_BACKOFF_BASE * (2 ** (attempt - 1)))
+    fallback = _BACKOFF_BASE * (2 ** (attempt - 1))
+    if retry_after is None:
+      self._sleep(fallback)
       return
-    self._sleep(_BACKOFF_BASE * (2 ** (attempt - 1)))
+    try:
+      requested = float(retry_after)
+    except ValueError:
+      # a Retry-After can be an HTTP date; fall back to our own schedule.
+      self._sleep(fallback)
+      return
+    self._sleep(min(requested, MAX_RETRY_AFTER_S))

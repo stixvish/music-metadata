@@ -191,3 +191,53 @@ def test_a_transport_error_is_retried_then_wrapped():
   with pytest.raises(SourceError):
     src.get_json("/x")
   assert len(attempts) == 2
+
+
+def test_an_absurd_retry_after_is_capped():
+  """a service asking for an hour parks a 1,494-track run on one track.
+
+  this is the bug that stalled a full pass: the main thread sat in
+  `time.sleep` with zero CPU and no open connections, indefinitely.
+  """
+  from music_metadata.sources.base import MAX_RETRY_AFTER_S
+
+  attempts = []
+
+  def handler(request):
+    attempts.append(1)
+    if len(attempts) == 1:
+      return httpx.Response(429, headers={"retry-after": "86400"})
+    return httpx.Response(200, json={})
+
+  src = make_source(handler, retries=3)
+  src.get_json("/x")
+
+  assert max(src.clock.slept) <= MAX_RETRY_AFTER_S
+
+
+def test_a_reasonable_retry_after_is_still_honoured_exactly():
+  attempts = []
+
+  def handler(request):
+    attempts.append(1)
+    if len(attempts) == 1:
+      return httpx.Response(429, headers={"retry-after": "7"})
+    return httpx.Response(200, json={})
+
+  src = make_source(handler, retries=3)
+  src.get_json("/x")
+
+  assert 7.0 in src.clock.slept
+
+
+def test_the_total_wait_across_retries_is_bounded():
+  """every sleep path has a ceiling, so a run can always make progress."""
+  from music_metadata.sources.base import MAX_RETRY_AFTER_S
+
+  src = make_source(
+    lambda r: httpx.Response(503, headers={"retry-after": "99999"}), retries=5
+  )
+  with pytest.raises(SourceError):
+    src.get_json("/x")
+
+  assert sum(src.clock.slept) <= MAX_RETRY_AFTER_S * 5
