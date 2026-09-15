@@ -1496,10 +1496,25 @@ the only search-derived link the pipeline actually produces is beatport's, and
 a fact that has one. it is dropped on open, and only when empty: a table holding
 rows would be a migration, not a deletion.
 
-the distinction it encoded is still live and still matters (F22: beatport's ISRC
-lookup fails on all 9 remixes, so those fall back to search). **note that
-`Match.matched_by` is set but never read** — surfacing it, so a search-matched
-beatport genre is visibly less certain than an ISRC-matched one, is open work.
+**a correction to how this was first written here.** it said beatport's ISRC
+lookup "fails" on the 9 remixes, so those fall back to a less certain search.
+that reads F22 without F23. the lookup does not fail — **it correctly returns
+nothing**, because the library holds the radio edits and beatport holds the
+DJ-length extended mixes, and F23 measured the gap at +80s to +137s. those are
+different recordings, and an ISRC that identified both would be the bug.
+
+so for beatport the `matched_by` axis is not the meaningful one. finding the
+listing by search is the _intended_ path for a remix, and what governs trust is
+the **duration field class** (§7, G3) — already first-class as
+`CLASS_SAME_RECORDING` / `CLASS_DIFFERENT_EDIT`, and already enforced: genre,
+sub-genre, label and remixer transfer either way, while bpm, key and length
+transfer only within ±5s, and **beatport's ISRC never transfers at all** (G9,
+no tolerance). that is a second reason `service_ids` earned nothing: the
+distinction it stored was the wrong one for the only source that would have
+populated it.
+
+**`Match.matched_by` is set but never read.** it is retained because it is free
+and honest, but nothing depends on it.
 
 **F8 — rate limits are gentler in practice than documented.**
 published Starter is 6 req/min ([musicfetch.io](https://musicfetch.io/) pricing,
