@@ -93,6 +93,9 @@ def _resolved_for(store: Store, probed: ProbedFile) -> Resolved:
   itunes_release = None
   discogs_release = None
   artwork: Artwork | None = None
+  # bound before the branch: the 55 files with no ISRC (§2) take none of it,
+  # and an unbound name here crashes `apply` on exactly those tracks.
+  beatport_match: Match | None = None
   if probed.isrc:
     recording = recording_from_raw(store.get_raw(probed.isrc, "musicbrainz"))
     if recording is not None:
@@ -216,6 +219,48 @@ def _map_row(
     "itunes": "",
     "beatport": "",
   }
+
+
+def write_map(store: Store, map_path: Path) -> int:
+  """Build `library.toml` from the sidecar alone. No probing, no network.
+
+  §9b: **every run produces one file**, and it is "the map, the override file
+  and the worklist at once". binding it to `apply` would mean writing 1,494
+  tagged copies just to see which tracks still need a beatport URL — the exact
+  loop §9b describes is resolve, read the map, paste a URL, re-run.
+
+  Building it from the `files` table rather than re-probing also makes it cheap
+  enough to call mid-run.
+
+  Args:
+    store: the sidecar.
+    map_path: where to write the map.
+
+  Returns:
+    How many entries were written.
+  """
+  entries = []
+  on_disk = library_map.read(map_path)
+  for row in store.query("SELECT * FROM files ORDER BY path"):
+    probed = ProbedFile(
+      path=Path(row["path"]),
+      audio_md5=row["audio_md5"],
+      duration_s=float(row["duration_s"]),
+      isrc=row["isrc_from_tag"],
+      tags={},
+    )
+    resolved = _resolved_for(store, probed)
+    chosen = choose_release(_candidates_for(store, probed))
+    entries.append(
+      library_map.merge(
+        probed.audio_md5,
+        _map_row(probed, resolved, chosen),
+        on_disk.get(probed.audio_md5, {}),
+        store.get_generated(probed.audio_md5),
+      )
+    )
+  library_map.write(map_path, entries, store)
+  return len(entries)
 
 
 def cmd_probe(args: argparse.Namespace) -> int:
@@ -412,6 +457,10 @@ def cmd_resolve(args: argparse.Namespace) -> int:
               bp_misses += 1
 
         fetched += 1
+        # §9b: the map is the worklist. flushing it periodically means a long
+        # run is inspectable while it is still going, not only afterwards.
+        if fetched % 100 == 0:
+          write_map(store, args.map)
         credited = "credit" if recording else "no-credit"
         emit(
           f"[{index}/{len(rows)}] {isrc} — "
@@ -426,6 +475,8 @@ def cmd_resolve(args: argparse.Namespace) -> int:
       if beatport is not None:
         beatport.close()
 
+    written = write_map(store, args.map)
+    emit(f"wrote {args.map} ({written} entries)")
     emit(f"resolved {fetched} fetched, {cached} already cached")
     emit(f"musicbrainz {mb_hits} found, {mb_misses} missing, {mb_errors} unavailable")
     emit(f"artwork {art_hits} verified, {art_misses} unverified (G5)")
@@ -508,11 +559,9 @@ def cmd_apply(args: argparse.Namespace) -> int:
   args.out.mkdir(parents=True, exist_ok=True)
   with Store.open(args.sidecar) as store:
     written = 0
-    entries = []
     for probed in probe_tree(args.library):
       if args.limit and written >= args.limit:
         break
-      candidates = _candidates_for(store, probed)
       resolved = _resolved_for(store, probed)
 
       # §8's gates refuse to guess; each refusal becomes a queue entry rather
@@ -546,19 +595,10 @@ def cmd_apply(args: argparse.Namespace) -> int:
       write_tags(destination, resolved.tags)
       written += 1
 
-      entries.append(
-        library_map.merge(
-          probed.audio_md5,
-          _map_row(probed, resolved, choose_release(candidates)),
-          library_map.read(args.map).get(probed.audio_md5, {}),
-          store.get_generated(probed.audio_md5),
-        )
-      )
       emit(f"wrote {destination.name}")
 
-    library_map.write(args.map, entries, store)
     emit(f"wrote {written} tagged copies to {args.out}")
-    emit(f"wrote {args.map}")
+    emit(f"wrote {args.map} ({write_map(store, args.map)} entries)")
     for flag, count in store.review_counts().items():
       emit(f"flagged {count} × {flag}")
   return 0
@@ -777,6 +817,7 @@ def build_parser() -> argparse.ArgumentParser:
   resolve.add_argument(
     "--no-beatport", action="store_true", help="skip tier 3 entirely (SPEC.md §5)"
   )
+  resolve.add_argument("--map", type=Path, default=Path("library.toml"))
   resolve.set_defaults(func=cmd_resolve)
 
   diff = sub.add_parser("diff", help="proposed changes, old to new")

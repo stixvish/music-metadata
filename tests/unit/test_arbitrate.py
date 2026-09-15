@@ -569,3 +569,13 @@ def test_no_beatport_falls_back_to_discogs_genre():
 
   assert got.tags.genre == "House"
   assert got.tags.bpm is None
+
+
+def test_a_track_with_no_isrc_resolves_without_crashing():
+  """the 55 no-ISRC files (§2) take none of the source data and must still
+  produce a result — an unbound source variable would crash `apply` on exactly
+  the tracks that have the least information."""
+  got = arbitrate(probed(name="A$AP Rocky - Fuckin' Problems.aiff", isrc=None), [])
+
+  assert got.tags.title == "Fuckin' Problems"
+  assert got.tags.isrc is None
