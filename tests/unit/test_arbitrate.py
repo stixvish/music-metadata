@@ -11,8 +11,10 @@ from music_metadata.arbitrate import (
   arbitrate,
   year_of,
 )
+from music_metadata.credit import FLAG_CREDIT_DISAGREEMENT
 from music_metadata.probe import ProbedFile
 from music_metadata.release import ReleaseCandidate
+from music_metadata.sources.musicbrainz import Credit, Work
 
 
 def probed(name="*NSYNC - Bye Bye Bye.aiff", isrc="USJI10000001", duration=200.4):
@@ -171,9 +173,21 @@ def test_a_feature_never_reaches_the_album_artist():
 
 
 def test_multiple_main_artists_use_the_house_separator():
-  got = arbitrate(probed(), [cand(track_artists=("A", "B", "C"))])
+  got = arbitrate(
+    probed(name="A, B & C - Track.aiff"), [cand(track_artists=("A", "B", "C"))]
+  )
 
   assert got.tags.artist == "A, B & C"
+
+
+def test_the_filename_outranks_spotify_for_artist():
+  """§6 ranks the filename second, above spotify — it is the operator's own
+  curation, and it agreed with musicbrainz on every case where both existed."""
+  got = arbitrate(
+    probed(name="*NSYNC - Bye Bye Bye.aiff"), [cand(track_artists=("N Sync",))]
+  )
+
+  assert got.tags.artist == "*NSYNC"
 
 
 # --- the operator's own values outrank every source (§7) ---------------------
@@ -255,3 +269,107 @@ def test_artwork_cannot_be_overridden_as_text():
   got = arbitrate(probed(), [cand()], overrides={"artwork": "not-bytes"})
 
   assert got.tags.artwork is None
+
+
+# --- musicbrainz: credit, and the writing credits (§6, §7d, F52) -------------
+
+
+def test_musicbrainz_decides_the_credit_when_it_has_the_recording():
+  got = arbitrate(
+    probed(name="Calvin Harris - Sweet Nothing (ft. Florence Welch).aiff"),
+    [
+      cand(
+        track_name="Sweet Nothing", track_artists=("Calvin Harris", "Florence Welch")
+      )
+    ],
+    musicbrainz=Credit(main=("Calvin Harris",), featured=("Florence Welch",)),
+  )
+
+  assert got.tags.artist == "Calvin Harris"
+  assert got.tags.title == "Sweet Nothing (ft. Florence Welch)"
+  assert got.provenance["artist"] == "musicbrainz"
+
+
+def test_a_credit_disagreement_is_flagged():
+  """G6: disagreements are queued for review, never auto-resolved."""
+  got = arbitrate(
+    probed(name="Someone Else - Track.aiff"),
+    [cand(track_name="Track")],
+    musicbrainz=Credit(main=("The Real Artist",), featured=()),
+  )
+
+  assert FLAG_CREDIT_DISAGREEMENT in got.flags
+
+
+def test_composer_and_lyricist_are_written_when_musicbrainz_names_them():
+  """F52: measured 10/10 on indian repertoire, where §7a scopes the rule."""
+  got = arbitrate(
+    probed(name="Arijit Singh - Channa Mereya.aiff", isrc="INS171602370"),
+    [cand(track_name="Channa Mereya", track_artists=("Arijit Singh",))],
+    work=Work(composers=("Pritam",), lyricists=("Amitabh Bhattacharya",), writers=()),
+  )
+
+  assert got.tags.composer == "Pritam"
+  assert got.tags.lyricist == "Amitabh Bhattacharya"
+  assert got.provenance["composer"] == "musicbrainz"
+
+
+def test_a_bare_writer_is_not_promoted_to_composer():
+  """F52: `writer` records that someone wrote it, not which role they held.
+
+  promoting it would assert a role musicbrainz deliberately left unstated, and
+  §7f's rule applies — a wrong value gets trusted.
+  """
+  got = arbitrate(
+    probed(),
+    [cand()],
+    work=Work(composers=(), lyricists=(), writers=("Calvin Harris", "Kid Harpoon")),
+  )
+
+  assert got.tags.composer is None
+  assert got.tags.lyricist is None
+
+
+def test_several_composers_use_the_house_separator():
+  got = arbitrate(
+    probed(),
+    [cand()],
+    work=Work(composers=("A", "B", "C"), lyricists=(), writers=()),
+  )
+
+  assert got.tags.composer == "A, B & C"
+
+
+def test_indian_scope_refuses_spotifys_artist_list():
+  """§7a / F29: spotify inverts roles on bollywood, promoting music directors.
+
+  an indian track with no musicbrainz and no filename credit is flagged rather
+  than given a list that names the wrong people.
+  """
+  got = arbitrate(
+    probed(name="Untitled.aiff", isrc="INS181801821"),
+    [cand(track_artists=("Some Music Director", "A Singer"))],
+  )
+
+  assert got.tags.artist is None
+  assert "no-performer-credit" in got.flags
+
+
+def test_western_repertoire_still_uses_spotify_as_a_fallback():
+  """applying the indian rule globally would strip real main artists."""
+  got = arbitrate(
+    probed(name="Untitled.aiff", isrc="USJI10000001"),
+    [cand(track_artists=("Metro Boomin",))],
+  )
+
+  assert got.tags.artist == "Metro Boomin"
+
+
+def test_the_losing_reading_reaches_the_review_queue():
+  got = arbitrate(
+    probed(name="A Boogie Wit da Hoodie - Chanelly (ft. Don Q).aiff"),
+    [cand(track_name="Chanelly", track_artists=("A Boogie Wit da Hoodie",))],
+    musicbrainz=Credit(main=("A Boogie Wit da Hoodie",), featured=()),
+  )
+
+  assert "Don Q" in got.alternatives[FLAG_CREDIT_DISAGREEMENT]

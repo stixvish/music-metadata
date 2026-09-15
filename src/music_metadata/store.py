@@ -347,6 +347,64 @@ class Store:
     )
     return {r["field"]: r["value"] for r in rows}
 
+  # --- the review queue (§14) ------------------------------------------------
+
+  def put_review(
+    self,
+    audio_md5: str,
+    flag: str,
+    file: str,
+    proposed: str = "",
+    current: str = "",
+    source: str = "",
+  ) -> None:
+    """Queue a flagged track for review.
+
+    Args:
+      audio_md5: the track's decoded-audio md5.
+      flag: the gate that raised it.
+      file: the file's name, for the operator to recognise.
+      proposed: the value the resolver would write.
+      current: the value it would replace. §14 puts the two side by side,
+        because a disagreement is not decidable from one of them alone.
+      source: which source proposed it.
+    """
+    self.execute(
+      """INSERT INTO review (audio_md5, flag, file, proposed, current, source)
+         VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT(audio_md5, flag) DO UPDATE SET
+           file     = excluded.file,
+           proposed = excluded.proposed,
+           current  = excluded.current,
+           source   = excluded.source""",
+      (audio_md5, flag, file, proposed, current, source),
+    )
+
+  def resolve_review(self, audio_md5: str, flag: str | None = None) -> None:
+    """Clear a track from the review queue.
+
+    Args:
+      audio_md5: the track's decoded-audio md5.
+      flag: clear only this flag, or every flag on the track when omitted.
+    """
+    if flag is None:
+      self.execute("DELETE FROM review WHERE audio_md5 = ?", (audio_md5,))
+    else:
+      self.execute(
+        "DELETE FROM review WHERE audio_md5 = ? AND flag = ?", (audio_md5, flag)
+      )
+
+  def review_counts(self) -> dict[str, int]:
+    """Return how many tracks each gate has flagged.
+
+    Returns:
+      Flag to count, which is what `verify` reports rather than assumes.
+    """
+    rows = self.query(
+      "SELECT flag, COUNT(*) AS n FROM review GROUP BY flag ORDER BY flag"
+    )
+    return {r["flag"]: int(r["n"]) for r in rows}
+
   # --- jobs ------------------------------------------------------------------
 
   def create_job(self, kind: str) -> int:

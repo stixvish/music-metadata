@@ -23,6 +23,13 @@ from music_metadata.config import DEFAULT_SIDECAR, load_env, require
 from music_metadata.output import Level, emit
 from music_metadata.probe import ProbedFile, probe_tree
 from music_metadata.release import ReleaseCandidate, choose_release
+from music_metadata.sources.base import SourceError
+from music_metadata.sources.musicbrainz import (
+  MusicBrainz,
+  Work,
+  recording_from_raw,
+  work_from_raw,
+)
 from music_metadata.sources.spotify import Spotify, candidates_from_raw
 from music_metadata.store import Store
 from music_metadata.tag import Tags, read_tags, write_tags
@@ -47,7 +54,7 @@ def _candidates_for(store: Store, probed: ProbedFile) -> list[ReleaseCandidate]:
 
 
 def _resolved_for(store: Store, probed: ProbedFile) -> Resolved:
-  """Arbitrate one track from whatever is already cached.
+  """Arbitrate one track from whatever is already cached. No network.
 
   Args:
     store: the sidecar.
@@ -56,7 +63,34 @@ def _resolved_for(store: Store, probed: ProbedFile) -> Resolved:
   Returns:
     The resolved tags.
   """
-  return arbitrate(probed, _candidates_for(store, probed))
+  credit = None
+  work: Work | None = None
+  if probed.isrc:
+    recording = recording_from_raw(store.get_raw(probed.isrc, "musicbrainz"))
+    if recording is not None:
+      credit = recording.credit
+    raw_work = store.get_raw(probed.isrc, "work")
+    if raw_work is not None:
+      work = work_from_raw(raw_work)
+  return arbitrate(
+    probed, _candidates_for(store, probed), musicbrainz=credit, work=work
+  )
+
+
+def render_credit_from_tags(resolved: Resolved) -> str:
+  """Render the credit the resolver chose, as the review queue shows it.
+
+  Args:
+    resolved: the arbitrated result.
+
+  Returns:
+    The artist plus any featured artists carried in the title.
+  """
+  title = resolved.tags.title or ""
+  _, _, tail = title.partition("(ft. ")
+  featured = tail.partition(")")[0] if tail else ""
+  artist = resolved.tags.artist or ""
+  return f"{artist} (ft. {featured})" if featured else artist
 
 
 def _map_row(
@@ -143,21 +177,56 @@ def cmd_resolve(args: argparse.Namespace) -> int:
       return 1
 
     spotify = Spotify(require("SPOTIFY_CLIENT_ID"), require("SPOTIFY_CLIENT_SECRET"))
+    musicbrainz = MusicBrainz()
+    fetched = cached = mb_hits = mb_misses = mb_errors = 0
     try:
-      fetched = cached = 0
       for index, row in enumerate(rows, start=1):
         isrc = row["isrc_from_tag"]
-        if store.get_raw(isrc, "spotify") is not None and not args.refetch:
+        cached_already = store.get_raw(isrc, "spotify") is not None
+        if cached_already and not args.refetch:
           cached += 1
           continue
+
         result = spotify.search_isrc(isrc)
         store.put_raw(isrc, "spotify", result.raw)
+
+        # tier 2. a miss here is normal (F31), and so is the service being
+        # briefly unavailable — musicbrainz 503s routinely (F30/F52). neither
+        # may abort the run: §5's rule that a flaky tier cannot stop the
+        # pipeline is not specific to beatport, and losing an hour of resolved
+        # identities to one bad minute would be the expensive failure.
+        recording = None
+        try:
+          recording, raw_mb = musicbrainz.recording_for_isrc(isrc)
+          store.put_raw(isrc, "musicbrainz", raw_mb)
+        except SourceError as exc:
+          mb_errors += 1
+          emit(f"  musicbrainz unavailable for {isrc}: {exc}", level=Level.WARN)
+
+        if recording is None:
+          mb_misses += 1
+        else:
+          mb_hits += 1
+          if recording.work_id:
+            try:
+              _, raw_work = musicbrainz.work(recording.work_id)
+              store.put_raw(isrc, "work", raw_work)
+            except SourceError as exc:
+              mb_errors += 1
+              emit(f"  musicbrainz work failed for {isrc}: {exc}", level=Level.WARN)
+
         fetched += 1
-        emit(f"[{index}/{len(rows)}] {isrc} — {len(result.candidates)} releases")
+        credited = "credit" if recording else "no-credit"
+        emit(
+          f"[{index}/{len(rows)}] {isrc} — "
+          f"{len(result.candidates)} releases, {credited}"
+        )
     finally:
       spotify.close()
+      musicbrainz.close()
 
     emit(f"resolved {fetched} fetched, {cached} already cached")
+    emit(f"musicbrainz {mb_hits} found, {mb_misses} missing, {mb_errors} unavailable")
   return 0
 
 
@@ -228,7 +297,32 @@ def cmd_apply(args: argparse.Namespace) -> int:
       if args.limit and written >= args.limit:
         break
       candidates = _candidates_for(store, probed)
-      resolved = arbitrate(probed, candidates)
+      resolved = _resolved_for(store, probed)
+
+      # §8's gates refuse to guess; each refusal becomes a queue entry rather
+      # than a line in a log nobody reads (§14).
+      store.resolve_review(probed.audio_md5)
+      if resolved.flags:
+        existing = read_tags(probed.path)
+        for flag in resolved.flags:
+          # show what the decision is actually between. for a credit
+          # disagreement the two sides often share a TPE1 and differ only in
+          # who is featured, so a bare artist field shows nothing to decide.
+          alternative = resolved.alternatives.get(flag)
+          if alternative is not None:
+            proposed = render_credit_from_tags(resolved)
+            current = alternative
+          else:
+            proposed = resolved.tags.artist or ""
+            current = existing.artist or ""
+          store.put_review(
+            audio_md5=probed.audio_md5,
+            flag=flag,
+            file=probed.path.name,
+            proposed=proposed,
+            current=current,
+            source=resolved.provenance.get("artist", ""),
+          )
 
       # §9: emit a fully tagged copy, leave the source untouched.
       destination = args.out / probed.path.name
@@ -249,6 +343,8 @@ def cmd_apply(args: argparse.Namespace) -> int:
     library_map.write(args.map, entries, store)
     emit(f"wrote {written} tagged copies to {args.out}")
     emit(f"wrote {args.map}")
+    for flag, count in store.review_counts().items():
+      emit(f"flagged {count} × {flag}")
   return 0
 
 

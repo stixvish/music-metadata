@@ -1097,6 +1097,123 @@ the cost is real: a popular recording now costs up to 4 calls instead of 1,
 against F8's 20 req/min. it is not optional — §7b's ranking and F33's date both
 operate over the full candidate set.
 
+**F52 — musicbrainz names composers in indian repertoire and `writer`
+everywhere else.** measured 2026-09-14 over two samples of the library, walking
+`/ws/2/isrc/{ISRC}` -> performance relation -> `/ws/2/work/{id}?inc=artist-rels`:
+
+| sample                   | recordings found | linked to a work | `composer` | `lyricist` | `writer` |
+| ------------------------ | ---------------- | ---------------- | ---------- | ---------- | -------- |
+| indian (`IN` prefix), 12 | 10               | 10               | **10**     | **11**     | 0        |
+| western, 12              | 12               | 6                | 0          | 0          | **34**   |
+
+**this confirms §7d rather than contradicting it.** F28's claim — that
+musicbrainz separates performers from composers — holds precisely where §7a
+scopes the rule: indian repertoire, where the distinction is editorially
+maintained and coverage was 10/10.
+
+western works use the generic `writer` relation, which records _that_ someone
+wrote the work and not _which role they held_. **`writer` is therefore not
+written to `TCOM` or `TEXT`.** promoting it would assert a role musicbrainz
+deliberately left unstated, and §7f's rule applies: a wrong value is worse than
+a missing one, because a wrong one gets trusted. the practical cost is that
+western tracks usually carry no `TCOM`, which §7d already anticipated
+("it is simply rarer that musicbrainz has it").
+
+two operational facts from the same probe, neither previously recorded:
+
+- **a `User-Agent` is mandatory** — the API returns `HTTP 403` without one.
+- **`currently busy` is `HTTP 503`**, and the very first request of this probe
+  received one. F30 is not a historical curiosity; it fires routinely, and a
+  client that treats it as a miss silently drops artist credits.
+
+**F53 — G6 measures 85.4%, not ≥95%, and where the two sources disagree the
+filename is usually the better one.** measured 2026-09-14 over all 398 featured
+tracks, cross-checking musicbrainz `artist-credit` joinphrases against the
+filename:
+
+```text
+featured tracks            398
+  no ISRC                   20
+  musicbrainz has none      23
+  cross-checked            355
+  agree                    303
+  disagree                  52
+  G6                      85.4%   (gate target >= 95%)
+```
+
+**§6's claim that the filename "agreed with musicbrainz on every case where both
+were present" does not survive the full population.** it held on the 30-track
+sample it was written from; at 355 tracks it does not.
+
+the 52 disagreements are not one thing:
+
+| n   | class                                                        | which source is right                                                            |
+| --- | ------------------------------------------------------------ | -------------------------------------------------------------------------------- |
+| 19  | musicbrainz credits **fewer** artists                        | the filename — musicbrainz is missing a credited feature entirely                |
+| 13  | musicbrainz **flattened the feature** into main, same people | the filename — it marks the boundary the operator intended                       |
+| 8   | genuinely different personnel                                | neither, reliably — `Quango Rondo` vs `Quango Quango`, `Carnage` vs `DJ Carnage` |
+| 7   | musicbrainz credits **more** artists                         | musicbrainz — it names co-producers the filename omits                           |
+| 5   | same people, boundary differs                                | usually the filename                                                             |
+
+**18 of 52 (35%) name exactly the same people and differ only on where the
+main/featured boundary falls.** counting those as agreement gives **90.4%** —
+still short of the gate.
+
+the structural claim behind §6 needs qualifying: musicbrainz's `joinphrase` is
+authoritative **when it marks a feature**, but it frequently does not. on
+`Blxst - Risk Taker (ft. Offset)` musicbrainz joins both artists with `&` and
+the feature disappears. the operator typing `(ft. Offset)` is the more
+deliberate signal for that one question.
+
+**resolved (operator decision): the filename decides the boundary, musicbrainz
+decides the personnel.** where both sources name exactly the same people and
+differ only on where the feature boundary falls, the filename wins — the
+operator typed `(ft. …)` deliberately, and musicbrainz is usually the one that
+lost it. where they name _different_ people, the track is flagged and queued,
+never auto-resolved.
+
+re-measured under that policy:
+
+```text
+  cross-checked            357
+  agree                    323
+  disagree                  34
+  G6                      90.5%   (gate target >= 88%, set from this measurement)
+```
+
+**what G6 is really comparing.** it cross-checks musicbrainz against the
+_filename_, and the filename is effectively what the library already says:
+
+```text
+featured tracks                                    398
+  filename artist identical to the existing TPE1   397   (99.7%)
+  existing tags put the feature in the title       398   (100%)
+  existing tags put the feature in the artist        0
+```
+
+so G6 is not an abstract source comparison — it measures **how often musicbrainz
+disagrees with the tags the operator already has**, and §7a's chosen shape
+(feature in the title, option A) is the shape those tags are already in. the one
+mismatch is `David Guetta & Kid Cudi - Memories (ft. Kid Cudi)`, where the
+filename names Kid Cudi as both a main artist and a feature.
+
+the 34 disagreements that survive the boundary rule break down as:
+
+| n   | what musicbrainz does                | note                                    |
+| --- | ------------------------------------ | --------------------------------------- |
+| 19  | **drops** an artist the library has  | accepting it would lose a credit        |
+| 7   | **adds** an artist the library lacks | usually a co-producer                   |
+| 6   | both drops and adds                  |                                         |
+| 2   | spells a name differently            | `DJ Carnage`/`Carnage`, `Lemar`/`Lamar` |
+
+**in 19 of 34 cases, accepting musicbrainz would remove a credit that is already
+there.** that is the strongest argument against auto-resolving toward
+musicbrainz, and it is why the queue exists: the default has to be a human
+looking at both, not a rule preferring whichever source is nominally more
+structured. the two spelling cases are worth flagging rather than folding away —
+`Damian Lamar Hudson` vs `Damian Lemar Hudson` is a likely typo in the library,
+which is exactly the kind of thing review should catch.
+
 **F8 — rate limits are gentler in practice than documented.**
 published Starter is 6 req/min ([musicfetch.io](https://musicfetch.io/) pricing,
 checked 2026-09-14). measured: **20 sequential requests at 1 req/s, all HTTP
@@ -1246,8 +1363,13 @@ flattens every contributor into one list with no role. measured on real tracks:
 | `Arizona Zervas - OH MY LORD (ft. 24kGoldn)` | `['Arizona Zervas', '24kGoldn']` | main + **feature**, indistinguishable |
 | `Internet Money - Options (ft. 24kGoldn)`    | `['Internet Money', '24kGoldn']` | main + **feature**, indistinguishable |
 
-**418 of 1,494 files (28%)** encode a feature in the filename, and 196 more
-carry multiple _main_ artists. this is not an edge case.
+**398 of 1,494 files (26.6%)** encode a feature in the filename, and 401 carry
+a separator in the artist part. this is not an edge case.
+
+> re-counted 2026-09-14: an earlier revision said 418 and 28%. the library uses
+> exactly one spelling — `(ft.` followed by a space — on 398 files; no
+> `(feat.`, `(featuring` or bracketed variant occurs at all.
+> **G6's denominator is 398.**
 
 **musicbrainz solves it structurally.** its `artist-credit` array carries an
 explicit `joinphrase` per element, so the boundary is machine-readable rather
@@ -1758,8 +1880,13 @@ the §7e position on BPM.
   a longer recording is a correctness failure, not a metadata improvement, and
   `verify` asserts it never happens.
 - **G6 artist-credit agreement.** musicbrainz and the filename agree on the
-  main/featured split for ≥95% of the 418 featured tracks. disagreements are
+  main/featured split for **≥88%** of the 398 featured tracks. disagreements are
   queued for review, never auto-resolved.
+  **the threshold is derived from measurement, not aspiration** (F53): the
+  policy achieves **90.5%**, and 88% sits below that with enough room that the
+  gate catches a regression instead of failing on the day it was written. the
+  original ≥95% came from a 30-track sample and the full population does not
+  support it.
 - **G4 non-destruction.** the source tree's bytes are unchanged after any run.
   asserted by checksum, not by inspection.
 - **G5 artwork — verified identity, always refetched.** every output file

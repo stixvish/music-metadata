@@ -18,6 +18,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field, fields, replace
 from typing import Any
 
+from music_metadata.credit import (
+  FLAG_CREDIT_DISAGREEMENT,
+  in_indian_scope,
+  render_credit,
+  resolve_credit,
+)
 from music_metadata.naming import (
   join_artists,
   remixer_from_mix,
@@ -31,6 +37,7 @@ from music_metadata.release import (
   choose_release,
   earliest_release_date,
 )
+from music_metadata.sources.musicbrainz import Credit, Work
 from music_metadata.tag import Tags
 
 # provenance labels. one string per source so `verify` can count them.
@@ -39,9 +46,11 @@ SPOTIFY = "spotify"
 FILENAME = "filename"
 FILE_TAG = "file-tag"
 DERIVED = "derived"
+MUSICBRAINZ = "musicbrainz"
 
 # flags raised for the review queue (§14). a flag is never a silent fallback.
 FLAG_NO_ISRC = "no-isrc"
+FLAG_NO_PERFORMER = "no-performer-credit"
 FLAG_NO_RELEASE = "no-release"
 FLAG_NO_ARTWORK = "no-artwork"
 
@@ -53,6 +62,9 @@ class Resolved:
   tags: Tags
   provenance: dict[str, str] = field(default_factory=dict)
   flags: tuple[str, ...] = ()
+  # what a flagged decision is actually between, keyed by flag. the review
+  # queue shows this rather than a bare field value.
+  alternatives: dict[str, str] = field(default_factory=dict)
 
 
 def _year_of(date: str | None) -> str | None:
@@ -75,6 +87,8 @@ def arbitrate(
   candidates: list[ReleaseCandidate] | tuple[ReleaseCandidate, ...] = (),
   overrides: dict[str, str] | None = None,
   prefer_standard_edition: bool = True,
+  musicbrainz: Credit | None = None,
+  work: Work | None = None,
 ) -> Resolved:
   """Resolve one track's tags from the sources available.
 
@@ -84,6 +98,9 @@ def arbitrate(
     overrides: hand-edited values from `library.toml`, which outrank every
       source (§7).
     prefer_standard_edition: passed through to §7b's ranking.
+    musicbrainz: the joinphrase credit split, when musicbrainz has the
+      recording (§6).
+    work: the work's writing credits, for `TCOM` and `TEXT` (§7d).
 
   Returns:
     The tags to write, the per-field provenance, and any review flags.
@@ -130,9 +147,32 @@ def arbitrate(
   mix = parsed.mix or parsed_name.mix
   remixer = remixer_from_mix(mix)
 
+  # §6's resolution order, gated by G6. the filename is a first-class source
+  # here, not a last resort.
+  # §7a / F38: **in indian scope, spotify's artist list is not usable as a
+  # fallback.** F29 measured that it inverts roles there, promoting music
+  # directors into `artists[]` — so an indian track with no musicbrainz and no
+  # filename credit is flagged rather than given a list that names the wrong
+  # people. everywhere else a producer credited as an artist genuinely is one.
+  indian = in_indian_scope(probed.isrc, tags.genre)
+  spotify_fallback = (
+    () if indian else tuple(a for a in chosen.track_artists if a not in features)
+  )
+  credit = resolve_credit(
+    probed.path.stem,
+    musicbrainz=musicbrainz,
+    title_features=features,
+    fallback_main=spotify_fallback,
+  )
+  if indian and not credit.main:
+    flags.append(FLAG_NO_PERFORMER)
+  features = credit.featured or features
+  flags += list(credit.flags)
+  credit_alternative = credit.alternative
+
   # §7a: `artist` is main artists plus the remixer; `album artist` is main
   # artists only, never the remixer and never a feature.
-  main = [a for a in chosen.track_artists if a not in features]
+  main = list(credit.main)
   date = earliest_release_date(candidates)
 
   tags = replace(
@@ -154,7 +194,7 @@ def arbitrate(
   provenance.update(
     {
       "title": SPOTIFY,
-      "artist": SPOTIFY if main else FILENAME,
+      "artist": credit.source,
       "album": SPOTIFY,
       "album_artist": SPOTIFY,
       "track_number": SPOTIFY,
@@ -172,11 +212,31 @@ def arbitrate(
     provenance["remixer"] = DERIVED
     provenance["original_artist"] = DERIVED
 
+  # §7d: composer and lyricist wherever musicbrainz supplies them. F52 measured
+  # that it does so in indian repertoire (10/10) and uses the role-less `writer`
+  # relation everywhere else — which is NOT promoted to either frame, because a
+  # wrong role gets trusted (§7f's rule, applied to credits).
+  if work is not None:
+    if work.composers:
+      tags = replace(tags, composer=join_artists(list(work.composers)))
+      provenance["composer"] = MUSICBRAINZ
+    if work.lyricists:
+      tags = replace(tags, lyricist=join_artists(list(work.lyricists)))
+      provenance["lyricist"] = MUSICBRAINZ
+
   # artwork is §7c's chain, which needs itunes; until then it is unresolved
   # and the track is flagged rather than given an unverified image (G5).
   flags.append(FLAG_NO_ARTWORK)
 
-  return _apply_overrides(Resolved(tags, provenance, tuple(flags)), overrides)
+  alternatives: dict[str, str] = {}
+  if credit_alternative is not None:
+    alternatives[FLAG_CREDIT_DISAGREEMENT] = render_credit(
+      credit_alternative.main, credit_alternative.featured
+    )
+
+  return _apply_overrides(
+    Resolved(tags, provenance, tuple(flags), alternatives), overrides
+  )
 
 
 def _apply_overrides(resolved: Resolved, overrides: dict[str, str]) -> Resolved:
@@ -219,6 +279,7 @@ def _apply_overrides(resolved: Resolved, overrides: dict[str, str]) -> Resolved:
     tags=replace(resolved.tags, **usable),
     provenance=provenance,
     flags=resolved.flags,
+    alternatives=resolved.alternatives,
   )
 
 
