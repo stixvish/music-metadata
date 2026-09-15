@@ -56,10 +56,23 @@ def create_app(store: Store) -> FastAPI:
   app.mount("/static", StaticFiles(directory=str(_HERE / "static")), name="static")
 
   @app.get("/", response_class=HTMLResponse)
-  def library(request: Request) -> HTMLResponse:
-    files = store.query("SELECT * FROM files ORDER BY path")
+  def library(
+    request: Request, q: str = "", state: str = "all", sort: str = "file"
+  ) -> HTMLResponse:
+    """§14 screen 1: every track, filterable and sortable by resolution state."""
     return _TEMPLATES.TemplateResponse(
-      request=request, name="library.html", context={"files": files}
+      request=request,
+      name="library.html",
+      context=_library_context(store, q, state, sort) | {"current": "/"},
+    )
+
+  @app.get("/rows", response_class=HTMLResponse)
+  def rows(
+    request: Request, q: str = "", state: str = "all", sort: str = "file"
+  ) -> HTMLResponse:
+    """Just the table, for htmx to swap in — no full-page reload to filter."""
+    return _TEMPLATES.TemplateResponse(
+      request=request, name="rows.html", context=_library_context(store, q, state, sort)
     )
 
   @app.get("/review", response_class=HTMLResponse)
@@ -85,7 +98,7 @@ def create_app(store: Store) -> FastAPI:
     return _TEMPLATES.TemplateResponse(
       request=request,
       name="review.html",
-      context={"groups": groups, "total": total},
+      context={"groups": groups, "total": total, "current": "/review"},
     )
 
   @app.post("/review/{md5}/accept", response_class=HTMLResponse)
@@ -109,7 +122,9 @@ def create_app(store: Store) -> FastAPI:
     ]
     tracks = len({r["file"] for r in rows})
     return _TEMPLATES.TemplateResponse(
-      request=request, name="diff.html", context={"rows": rows, "total": tracks}
+      request=request,
+      name="diff.html",
+      context={"rows": rows, "total": tracks, "current": "/diff"},
     )
 
   @app.post("/apply", response_class=HTMLResponse)
@@ -143,7 +158,7 @@ def create_app(store: Store) -> FastAPI:
     return _TEMPLATES.TemplateResponse(
       request=request,
       name="placeholder.html",
-      context={"screen": screen, "note": note},
+      context={"screen": screen, "note": note, "current": f"/{screen}"},
     )
 
   @app.post("/resolve", response_class=HTMLResponse)
@@ -174,6 +189,107 @@ def create_app(store: Store) -> FastAPI:
     )
 
   return app
+
+
+# how many rows the table renders at once. 1,494 <tr> elements is slow to
+# parse and impossible to scan; the filter is the way to reach the rest.
+_PAGE = 300
+
+_STATES = (
+  ("all", "all"),
+  ("resolved", "resolved"),
+  ("flagged", "flagged"),
+  ("unresolved", "unresolved"),
+  ("no-isrc", "no ISRC"),
+)
+
+_COLUMNS = (
+  ("file", "file"),
+  ("artist", "artist"),
+  ("album", "album"),
+  ("isrc", "ISRC"),
+  ("state", "state"),
+  ("duration", "length"),
+)
+
+_STATE_GLYPH = {"resolved": "●", "flagged": "▲", "none": "○"}
+
+
+def _library_context(store: Store, q: str, state: str, sort: str) -> dict[str, object]:
+  """Build the library table's rows, filtered and sorted.
+
+  Filtering happens in SQL rather than in the template so a 1,494-row library
+  never has to be materialised to show twenty matches.
+
+  Args:
+    store: the sidecar.
+    q: free-text filter over file, artist, album and ISRC.
+    state: one of `_STATES`.
+    sort: one of `_COLUMNS`.
+
+  Returns:
+    The template context.
+  """
+  flagged = {
+    r["audio_md5"] for r in store.query("SELECT DISTINCT audio_md5 FROM review")
+  }
+  resolved = {
+    r["isrc"] for r in store.query("SELECT isrc FROM recordings WHERE isrc IS NOT NULL")
+  }
+
+  total = store.query("SELECT COUNT(*) AS n FROM files")[0]["n"]
+  needle = f"%{q.lower()}%"
+  rows = store.query(
+    "SELECT * FROM files WHERE ? = '' OR lower(path) LIKE ? "
+    "OR lower(COALESCE(isrc_from_tag, '')) LIKE ? ORDER BY path",
+    (q, needle, needle),
+  )
+
+  out: list[dict[str, object]] = []
+  for row in rows:
+    isrc = row["isrc_from_tag"]
+    if isrc is None:
+      label, css = "no ISRC", "none"
+    elif row["audio_md5"] in flagged:
+      label, css = "flagged", "flagged"
+    elif isrc in resolved:
+      label, css = "resolved", "resolved"
+    else:
+      label, css = "unresolved", "none"
+
+    if state != "all" and state != ("no-isrc" if isrc is None else label):
+      continue
+
+    name = Path(row["path"]).name
+    artist, _, rest = name.rpartition(" - ")
+    seconds = float(row["duration_s"])
+    out.append(
+      {
+        "file": rest.removesuffix(".aiff") or name,
+        "artist": artist,
+        "album": "",
+        "isrc": isrc or "",
+        "state": label,
+        "state_class": css,
+        "glyph": _STATE_GLYPH.get(css, "○"),
+        "duration": f"{int(seconds // 60)}:{int(seconds % 60):02d}",
+      }
+    )
+
+  key = sort if sort in dict(_COLUMNS) else "file"
+  out.sort(key=lambda r: str(r.get(key, "")).lower())
+
+  return {
+    "rows": out[:_PAGE],
+    "shown": min(len(out), _PAGE),
+    "total": total,
+    "q": q,
+    "state": state,
+    "sort": key,
+    "direction": "ascending",
+    "states": _STATES,
+    "columns": _COLUMNS,
+  }
 
 
 def _resolve_body(store: Store) -> Callable[[jobs.Progress], None]:

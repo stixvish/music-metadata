@@ -1,0 +1,51 @@
+<div id="rows" class="scroll">
+    {% if rows %}
+        <table>
+            <caption aria-live="polite">
+                {{ shown }} of {{ total }} tracks{% if q or state != "all" %} matching{% endif %}
+            </caption>
+            <thead>
+                <tr>
+                    {% for key, label in columns %}
+                        <th scope="col"
+                            {% if sort == key %}aria-sort="{{ direction }}"{% endif %}>
+                            <a href="?q={{ q|urlencode }}&state={{ state }}&sort={{ key }}"
+                               hx-get="/rows?q={{ q|urlencode }}&state={{ state }}&sort={{ key }}"
+                               hx-target="#rows"
+                               hx-swap="outerHTML">
+                                {{ label }}{% if sort == key %}{% if direction == "ascending" %} ↑{% else %} ↓{% endif %}{% endif %}
+                            </a>
+                        </th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in rows %}
+                    <tr>
+                        <td>{{ row.file }}</td>
+                        <td>{{ row.artist }}</td>
+                        <td>{{ row.album }}</td>
+                        <td class="src">{{ row.isrc }}</td>
+                        <td>
+                            <span class="state state-{{ row.state_class }}">
+                                <span aria-hidden="true">{{ row.glyph }}</span>{{ row.state }}
+                            </span>
+                        </td>
+                        <td class="num">{{ row.duration }}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% if shown < total %}
+            <p class="empty">showing the first {{ shown }}. narrow the filter to see fewer.</p>
+        {% endif %}
+    {% else %}
+        <p class="empty">
+            {% if q or state != "all" %}
+                no tracks match that filter.
+            {% else %}
+                no tracks yet — run <code>music-metadata probe</code>.
+            {% endif %}
+        </p>
+    {% endif %}
+</div>

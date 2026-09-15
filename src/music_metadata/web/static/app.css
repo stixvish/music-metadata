@@ -1,80 +1,487 @@
-/* hand-written, no build step (SPEC.md §14). */
+/* hand-written, no build step (SPEC.md §14).
+ *
+ * this is a dense local tool for one operator scanning 1,494 tracks, not a
+ * marketing page. the visual language is deliberately quiet: one accent, no
+ * gradients, no decorative shadows. everything that draws the eye should be
+ * data or a decision.
+ */
+
+/* --- tokens ---------------------------------------------------------------
+ * one spacing scale (0.25rem steps). no value outside it appears below.
+ */
 :root {
-  --fg: #16161a;
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-8: 3rem;
+
+  --radius: 6px;
+  --radius-sm: 4px;
+
+  /* a warm near-white ground; the accent is the only saturated colour. */
   --bg: #fbfbfa;
+  --surface: #ffffff;
+  --fg: #16161a;
   --muted: #6d6d78;
-  --line: #e2e2dd;
+  --faint: #8e8e99;
+  --line: #e4e4de;
+  --accent: #1f6feb;
+  --accent-fg: #ffffff;
+
+  /* state colours always pair with a glyph or word — never colour alone. */
+  --ok: #1a7f4b;
+  --warn: #8a6200;
+  --bad: #b4472e;
+
+  --chrome: rgba(251, 251, 250, 0.72);
+  --shadow: 0 1px 2px rgb(16 16 26 / 6%);
+
+  color-scheme: light dark;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
+    --bg: #131318;
+    --surface: #1a1a20;
     --fg: #e9e9ec;
-    --bg: #15151a;
     --muted: #9a9aa6;
+    --faint: #7c7c88;
     --line: #2c2c35;
+    --accent: #58a6ff;
+    --accent-fg: #0b0b0f;
+
+    --ok: #56d38a;
+    --warn: #e3b341;
+    --bad: #f0836a;
+
+    --chrome: rgba(19, 19, 24, 0.72);
+    --shadow: 0 1px 2px rgb(0 0 0 / 40%);
   }
+}
+
+/* --- base -----------------------------------------------------------------
+ * type: leading tracks size inversely, tracking is size-specific. never one
+ * letter-spacing for every size.
+ */
+* {
+  box-sizing: border-box;
 }
 
 body {
   margin: 0;
-  padding: 0 1.5rem 3rem;
+  padding: 0 var(--space-5) var(--space-8);
   background: var(--bg);
   color: var(--fg);
-  font:
-    14px/1.5 ui-sans-serif,
+  font-family:
+    ui-sans-serif,
     system-ui,
     -apple-system,
+    "Segoe UI",
     sans-serif;
+  font-size: 0.875rem;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
 }
 
+h1 {
+  margin: var(--space-6) 0 var(--space-2);
+  font-size: 1.375rem;
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: -0.017em;
+}
+
+h2 {
+  margin: var(--space-6) 0 var(--space-2);
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -0.006em;
+}
+
+code,
+.mono {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.8125em;
+}
+
+/* --- focus ---------------------------------------------------------------
+ * one ring, everywhere, and never removed. keyboard users get the same
+ * affordances as pointer users.
+ */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.skip {
+  position: absolute;
+  left: var(--space-3);
+  top: calc(-1 * var(--space-8));
+  z-index: 10;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: var(--accent-fg);
+  text-decoration: none;
+}
+
+.skip:focus {
+  top: var(--space-3);
+}
+
+/* --- chrome ---------------------------------------------------------------
+ * a translucent layer content scrolls *under*, not an opaque strip that eats a
+ * fixed band of the viewport. the edge is a soft fade, not a 1px rule.
+ */
 nav {
+  position: sticky;
+  top: 0;
+  z-index: 5;
   display: flex;
-  gap: 1.25rem;
-  padding: 1rem 0;
-  border-bottom: 1px solid var(--line);
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin: 0 calc(-1 * var(--space-5));
+  padding: var(--space-3) var(--space-5) var(--space-4);
+  background: var(--chrome);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  mask-image: linear-gradient(to bottom, #000 68%, transparent);
 }
 
 nav a {
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius);
   color: var(--muted);
   text-decoration: none;
+  transition: color 120ms ease-out;
 }
 
 nav a:hover {
   color: var(--fg);
 }
 
-h1 {
-  font-size: 1.25rem;
-  font-weight: 600;
+nav a[aria-current="page"] {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+  font-weight: 500;
+}
+
+/* --- controls -------------------------------------------------------------
+ * feedback lands on pointer-down, not on release. §1: waiting for the click
+ * to show anything reads as dead.
+ */
+button {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+  transition:
+    background 120ms ease-out,
+    transform 90ms ease-out;
+}
+
+button:hover {
+  background: color-mix(in srgb, var(--fg) 4%, var(--surface));
+}
+
+button:active {
+  transform: scale(0.97);
+}
+
+button[type="submit"],
+.primary {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+
+button[type="submit"]:hover,
+.primary:hover {
+  background: color-mix(in srgb, var(--fg) 12%, var(--accent));
+}
+
+input[type="search"],
+input[type="text"],
+select {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.8125rem;
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+  margin: var(--space-4) 0;
+}
+
+.filters label {
+  color: var(--muted);
+}
+
+/* --- tables ---------------------------------------------------------------
+ * dense by intent: this is a scanning surface. the wrapper scrolls on narrow
+ * screens rather than letting the page scroll sideways.
+ */
+.scroll {
+  overflow-x: auto;
+  margin: 0 calc(-1 * var(--space-5));
+  padding: 0 var(--space-5);
 }
 
 table {
   width: 100%;
   border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+caption {
+  margin-bottom: var(--space-2);
+  color: var(--muted);
+  text-align: left;
 }
 
 th,
 td {
-  text-align: left;
-  padding: 0.4rem 0.75rem 0.4rem 0;
+  padding: var(--space-2) var(--space-4) var(--space-2) 0;
   border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
 }
 
-th {
+thead th {
+  position: sticky;
+  top: 3.25rem;
+  z-index: 1;
+  background: var(--chrome);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
   color: var(--muted);
   font-weight: 500;
+  white-space: nowrap;
 }
 
-.empty {
+thead a {
+  color: inherit;
+  text-decoration: none;
+}
+
+thead a:hover {
+  color: var(--fg);
+}
+
+tbody tr:hover {
+  background: color-mix(in srgb, var(--fg) 3%, transparent);
+}
+
+td.num {
+  text-align: right;
+  padding-right: var(--space-4);
   color: var(--muted);
 }
 
-.job {
-  display: flex;
-  gap: 0.75rem;
-  align-items: center;
+.was {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.src {
+  color: var(--faint);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.75rem;
+}
+
+/* --- state ----------------------------------------------------------------
+ * every state carries a glyph as well as a colour, so it survives greyscale
+ * and colour-vision differences.
+ */
+.state {
+  display: inline-flex;
+  gap: var(--space-1);
+  align-items: baseline;
+  white-space: nowrap;
+}
+
+.state-resolved {
+  color: var(--ok);
+}
+
+.state-flagged {
+  color: var(--warn);
+}
+
+.state-none {
+  color: var(--faint);
 }
 
 .error {
-  color: #b4472e;
+  color: var(--bad);
+}
+
+.empty {
+  max-width: 60ch;
+  color: var(--muted);
+}
+
+.count {
+  margin-left: var(--space-2);
+  padding: 0 var(--space-2);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+/* --- jobs -----------------------------------------------------------------*/
+.job {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  margin: var(--space-4) 0;
+  padding: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+progress {
+  flex: 1;
+  height: 6px;
+  border: none;
+  border-radius: 999px;
+  background: var(--line);
+  accent-color: var(--accent);
+}
+
+progress::-webkit-progress-bar {
+  border-radius: 999px;
+  background: var(--line);
+}
+
+progress::-webkit-progress-value {
+  border-radius: 999px;
+  background: var(--accent);
+  /* the bar is polled every 2s; easing across the gap reads as continuous
+   * motion rather than a step every two seconds. */
+  transition: inline-size 400ms ease-out;
+}
+
+.actions {
+  display: flex;
+  gap: var(--space-2);
+  margin: var(--space-4) 0;
+}
+
+.apply {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  margin: var(--space-5) 0;
+  padding: var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.gate {
+  margin-bottom: var(--space-6);
+}
+
+/* --- htmx -----------------------------------------------------------------
+ * a request in flight dims its target slightly. it is feedback, not a spinner.
+ */
+.htmx-request {
+  opacity: 0.6;
+  transition: opacity 120ms ease-out;
+}
+
+/* --- narrow screens -------------------------------------------------------*/
+@media (max-width: 40rem) {
+  body {
+    padding: 0 var(--space-3) var(--space-6);
+  }
+
+  nav,
+  .scroll {
+    margin: 0 calc(-1 * var(--space-3));
+    padding-inline: var(--space-3);
+  }
+
+  .filters {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  thead th {
+    top: 3rem;
+  }
+}
+
+/* --- user preferences -----------------------------------------------------
+ * reduced motion is not "no feedback" — it is feedback without vestibular
+ * movement. opacity and colour stay; transforms and easing go.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  button:active {
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  nav,
+  thead th {
+    background: var(--bg);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    mask-image: none;
+  }
+
+  nav {
+    border-bottom: 1px solid var(--line);
+  }
+}
+
+@media (prefers-contrast: more) {
+  :root {
+    --line: #8a8a94;
+    --muted: #3a3a44;
+    --faint: #3a3a44;
+  }
+
+  nav,
+  thead th {
+    background: var(--bg);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    mask-image: none;
+  }
+
+  button,
+  input,
+  select {
+    border-width: 2px;
+  }
 }
