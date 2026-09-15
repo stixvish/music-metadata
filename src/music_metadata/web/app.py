@@ -41,7 +41,8 @@ _PLACEHOLDERS = {
 _GATE_LABELS = {
   "credit-disagreement": "G6 · musicbrainz and the filename disagree on the credit",
   "no-artwork": "G5 · no verified artwork",
-  "no-release": "no release found",
+  "no-release": "spotify has no release for this ISRC",
+  "not-searched": "not looked up yet — this run has not reached it",
   "no-isrc": "G10 · no ISRC",
 }
 

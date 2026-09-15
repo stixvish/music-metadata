@@ -579,3 +579,23 @@ def test_a_track_with_no_isrc_resolves_without_crashing():
 
   assert got.tags.title == "Fuckin' Problems"
   assert got.tags.isrc is None
+
+
+def test_a_track_that_was_never_looked_up_is_not_called_a_miss():
+  """§8 reports measurements, and "we never asked" measures nothing.
+
+  the quota stopped a pass at track 61, and every later track then showed
+  `no release found` — which reads as spotify failing rather than a run that
+  had not reached them yet.
+  """
+  out = arbitrate(probed(), [], searched=False)
+
+  assert "not-searched" in out.flags
+  assert "no-release" not in out.flags
+
+
+def test_a_track_that_was_looked_up_and_found_nothing_is_a_miss():
+  out = arbitrate(probed(), [], searched=True)
+
+  assert "no-release" in out.flags
+  assert "not-searched" not in out.flags

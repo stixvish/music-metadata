@@ -59,6 +59,11 @@ BEATPORT = "beatport"
 FLAG_NO_ISRC = "no-isrc"
 FLAG_NO_PERFORMER = "no-performer-credit"
 FLAG_NO_RELEASE = "no-release"
+# **"we asked and there was nothing" and "we never asked" are different facts.**
+# both leave the candidate list empty, and reporting the first for the second
+# tells the operator a service failed them when the truth is a run stopped
+# early — which sends them looking for a problem that is not there.
+FLAG_NOT_SEARCHED = "not-searched"
 FLAG_NO_ARTWORK = "no-artwork"
 # OQ-8: the beatport listing is materially longer — a re-acquisition candidate,
 # never a substitution.
@@ -97,6 +102,7 @@ def arbitrate(
   candidates: list[ReleaseCandidate] | tuple[ReleaseCandidate, ...] = (),
   overrides: dict[str, str] | None = None,
   prefer_expanded_edition: bool = True,
+  searched: bool = True,
   musicbrainz: Credit | None = None,
   work: Work | None = None,
   itunes: ItunesRelease | None = None,
@@ -112,6 +118,8 @@ def arbitrate(
     overrides: hand-edited values from `library.toml`, which outrank every
       source (§7).
     prefer_expanded_edition: passed through to §7b's ranking.
+    searched: whether this track was ever looked up. False means the run has
+      not reached it, so an empty candidate list is not evidence of anything.
     musicbrainz: the joinphrase credit split, when musicbrainz has the
       recording (§6).
     work: the work's writing credits, for `TCOM` and `TEXT` (§7d).
@@ -141,7 +149,7 @@ def arbitrate(
 
   chosen = choose_release(candidates, prefer_expanded_edition=prefer_expanded_edition)
   if chosen is None:
-    flags.append(FLAG_NO_RELEASE)
+    flags.append(FLAG_NO_RELEASE if searched else FLAG_NOT_SEARCHED)
     # nothing but the file itself is known; fall back to what it is called.
     tags = replace(
       tags,
