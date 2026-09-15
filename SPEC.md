@@ -1598,6 +1598,58 @@ component cannot see it.** what catches it is asserting the wired behaviour —
 that a track with no itunes match still gets artwork — rather than that the
 function returns artwork when handed a URL.
 
+**F66 — the itunes _lookup_ endpoint reaches releases the _search_ index does
+not carry.** the operator supplied a link for `Checkers`, which F65 had probed
+as absent from the US, CA, GB, IN and AU search indexes under every term tried:
+
+```text
+GET /search?term=24kGoldn+Checkers        0 results   (every variant tried)
+GET /lookup?id=1657261196                 1 result, artwork 3000x3000, 2.5 MB
+```
+
+so the release is on apple; only the search index does not surface it. **this
+makes an operator-supplied link the most valuable artwork candidate**, not a
+last resort: it needs no verification — nothing was guessed — and it beat the
+spotify fallback by 3000px to 640.
+
+`library.toml` therefore gains an **`artwork`** field. §9b's merge lets one
+field do both jobs: it shows which cover was used, and accepts a
+`music.apple.com` link (or a direct image url) where none was found. verified
+end to end — the operator's link produced a 3000x3000 mjpeg embedded in the
+output file.
+
+**F67 — reading the map back made the pipeline treat its own output as the
+operator's assertion.** `_overrides_for` returned every value in the map, but
+the map holds generated values as well as typed ones. the consequences ranged
+from cosmetic to permanent:
+
+```text
+generated artwork url  -> re-fetched, provenance recorded as `operator-supplied`
+generated album name   -> pinned as a hand-edit, never updated again
+```
+
+**§9b already had the right test and it was not being applied**: a value that
+differs from what was generated last run was typed by hand. `_overrides_for`
+now applies it, and a run with no record of what it generated overrides
+nothing.
+
+two ways the map produced phantom edits, both now fixed:
+
+- **an algorithm change reads as an edit.** reversing §7b's edition preference
+  changed 15 album names and their spotify links; every one then looked
+  hand-typed. this is inherent to the design — the map cannot tell _why_ a value
+  moved — and the mitigation is that the generated snapshot is rewritten on
+  every `write_map`, so the divergence only survives if the file is not
+  regenerated.
+- **a duplicated audio hash had no stable winner.** the three class-A pairs
+  share an md5 and collapse to one entry, so `file` and `title` flipped between
+  `CHICA 305.aiff` and `CHICA 305 (2).aiff` depending on visit order, and each
+  flip read as an edit. the map now picks by `preference_key`, so the original
+  always wins over the re-download.
+
+after both fixes the operator's map reports **exactly the 5 values they typed**:
+4 ISRCs and 1 artwork link.
+
 **F65 — the itunes search finds nothing for an album name carrying an edition
 qualifier.** measured 2026-09-15, and this is why §7c's chain was failing before
 candidate C was even reached:
