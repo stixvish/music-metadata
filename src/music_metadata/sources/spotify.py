@@ -51,7 +51,14 @@ _TOKEN_MARGIN_S = 30.0
 #
 # the quota is handled where it actually lives: `RateLimitedError` ends the
 # pass and `resolve` resumes from cache the next day.
-_RATE_PER_MINUTE = 20
+#
+# **15/min is an operator decision, not a measured ceiling.** measured cost is
+# 1.41 requests per track (F56), so 15/min is ~10 tracks a minute and a full
+# pass is ~2h15. the worst track in the sample needed 10 pages on its own; at
+# this rate even a run of those still clears 1.5 tracks a minute. going faster
+# would not help — the binding constraint is the daily quota, not the rate —
+# so the slack is spent on being a good citizen rather than on finishing sooner.
+_RATE_PER_MINUTE = 15
 
 
 @dataclass(frozen=True, slots=True)
