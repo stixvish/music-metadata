@@ -1745,6 +1745,38 @@ GET /v4/my/account/                        401  same
 GET /v4/auth/o/introspect/                 200  {"user_id": null, "username": ""}
 ```
 
+**resolved: the exported cookie was stale, and `check` was validating the wrong
+thing.** comparing our minted token against the one the live site uses found a
+single difference:
+
+```text
+ours (stale cookie)  scope: "app:prostore user:dj"
+the browser's        scope: "openid app:prostore user:dj"
+```
+
+`__Secure-next-auth.session-token` rotates. a stale one still mints a token —
+so `bp_cookies.py check` reported success — but without `openid`, and the
+catalog API answers every request with 401. **re-exporting fixed it
+immediately**, and the same code that returned nothing for a whole pass now
+returns everything:
+
+```text
+24kGoldn — Breath Away   Hip-Hop  146bpm  8A   171s
+24kGoldn — Company       Hip-Hop  125bpm  1A   213s
+24kGoldn — Prada         Hip-Hop   89bpm  11A  172s
+A Boogie — Bleed         Hip-Hop  128bpm  7A   176s
+```
+
+**so the "hip-hop is not on beatport" inference was wrong**, as the operator
+said. beatport carries it, genre and all. no claim about beatport coverage in
+this document was ever measured against a working credential.
+
+**`check` now asks the API the pipeline uses**, not the one that happens to
+answer. minting a token proves nothing; the catalog endpoint accepting it is the
+property that matters, and the scope is printed so a stale cookie names itself.
+
+the original diagnosis follows, because the failure mode is worth keeping.
+
 **the token mints and is rejected.** it decodes as a well-formed, unexpired JWT
 for the right user:
 
