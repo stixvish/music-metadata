@@ -1214,6 +1214,38 @@ structured. the two spelling cases are worth flagging rather than folding away �
 `Damian Lamar Hudson` vs `Damian Lemar Hudson` is a likely typo in the library,
 which is exactly the kind of thing review should catch.
 
+**F54 — apple's artwork ceiling is the album's own master, and it varies.**
+measured 2026-09-14 by requesting sizes above 3000 and reading the JPEG headers:
+
+```text
+No Strings Attached   asked 3000 -> 3000x3000  2256 KB
+                      asked 4000 -> 3600x3600  2969 KB
+                      asked 4500 -> 3600x3600  2969 KB   (same bytes)
+                      asked 5000 -> 3600x3600  2969 KB   (same bytes)
+
+18 Months             asked 3000 -> 3000x3000  2162 KB
+                      asked 4500 -> 3000x3000  2162 KB   (same bytes)
+```
+
+**there is no single ceiling.** F5 records 4500x4500; neither album reaches it.
+apple serves each album's own master and silently returns that for any larger
+request — over-asking never errors, it just stops growing.
+
+this makes OQ-1's decision a **storage** choice rather than a technical limit,
+and a safe one: every album measured serves at least 3000, so asking for 3000
+never over-asks and never needs the step-down. the 3000 -> 1400 -> 600 ladder
+stays for non-200s and short reads, which is what §7c actually specified it for.
+
+the §7c table reproduces exactly at 3000, byte for byte, four years after it was
+first measured:
+
+```text
+No Strings Attached   2256 KB   via album search
+Stree                 1755 KB   via album search
+18 Months             2162 KB   via SONG search   <- F37's case
+ODYSSEY               2919 KB   via album search
+```
+
 **F8 — rate limits are gentler in practice than documented.**
 published Starter is 6 req/min ([musicfetch.io](https://musicfetch.io/) pricing,
 checked 2026-09-14). measured: **20 sequential requests at 1 req/s, all HTTP
