@@ -21,10 +21,13 @@ from music_metadata import library_map
 from music_metadata.arbitrate import Resolved, arbitrate
 from music_metadata.artwork import Artwork, resolve_artwork
 from music_metadata.config import DEFAULT_SIDECAR, get, load_env, require
+from music_metadata.naming import split_title
 from music_metadata.output import Level, emit
 from music_metadata.probe import ProbedFile, probe_tree
 from music_metadata.release import ReleaseCandidate, choose_release
 from music_metadata.sources.base import SourceError
+from music_metadata.sources.beatport import Beatport, Match, classify, tracks_from_raw
+from music_metadata.sources.bp_auth import CookieSessionProvider, NullProvider
 from music_metadata.sources.discogs import Discogs, release_from_raw
 from music_metadata.sources.itunes import Itunes, releases_from_raw
 from music_metadata.sources.musicbrainz import (
@@ -84,6 +87,7 @@ def _resolved_for(store: Store, probed: ProbedFile) -> Resolved:
       itunes_release = releases[0] if releases else None
     discogs_release = release_from_raw(store.get_raw(probed.isrc, "discogs"))
     artwork = _artwork_from_store(store, probed.isrc)
+    beatport_match = _beatport_from_store(store, probed)
 
   return arbitrate(
     probed,
@@ -93,7 +97,30 @@ def _resolved_for(store: Store, probed: ProbedFile) -> Resolved:
     itunes=itunes_release,
     discogs=discogs_release,
     artwork=artwork,
+    beatport=beatport_match,
   )
+
+
+def _beatport_from_store(store: Store, probed: ProbedFile) -> Match | None:
+  """Re-derive a beatport match from the cached payload. No network.
+
+  The G3 class is recomputed rather than stored, so a change to the tolerance
+  replays against what was already fetched (§9a).
+
+  Args:
+    store: the sidecar.
+    probed: the file's local facts, for the duration comparison.
+
+  Returns:
+    The match, or None when beatport had nothing.
+  """
+  if not probed.isrc:
+    return None
+  tracks = tracks_from_raw(store.get_raw(probed.isrc, "beatport"))
+  if not tracks:
+    return None
+  field_class, delta = classify(probed.duration_s, tracks[0])
+  return Match(tracks[0], "cached", field_class, delta)
 
 
 def _artwork_from_store(store: Store, isrc: str) -> Artwork | None:
@@ -229,10 +256,19 @@ def cmd_resolve(args: argparse.Namespace) -> int:
     itunes = Itunes()
     discogs_token = get("DISCOGS_TOKEN")
     discogs = Discogs(discogs_token) if discogs_token else None
+    # §5: tier 3 is optional by construction. with no cookie there is no
+    # provider, beatport contributes nothing, and the run completes.
+    provider = NullProvider() if args.no_beatport else CookieSessionProvider()
+    beatport = Beatport(tokens=provider) if provider.available else None
+    if beatport is None and not args.no_beatport:
+      emit(
+        "beatport: no session cookie, genre falls back to discogs/itunes",
+        level=Level.WARN,
+      )
     art_dir = args.sidecar.parent / "artwork"
     art_dir.mkdir(parents=True, exist_ok=True)
     fetched = cached = mb_hits = mb_misses = mb_errors = 0
-    art_hits = art_misses = 0
+    art_hits = art_misses = bp_hits = bp_misses = 0
     try:
       for index, row in enumerate(rows, start=1):
         isrc = row["isrc_from_tag"]
@@ -315,6 +351,25 @@ def cmd_resolve(args: argparse.Namespace) -> int:
             except SourceError as exc:
               emit(f"  discogs unavailable for {isrc}: {exc}", level=Level.WARN)
 
+        # tier 3. never raises; a miss and an outage look the same from here,
+        # which is what makes the tier droppable (§5).
+        if beatport is not None:
+          parsed_title = split_title(chosen.track_name) if chosen else None
+          artist = chosen.track_artists[0] if chosen and chosen.track_artists else ""
+          if parsed_title is not None:
+            match, raw_bp = beatport.find(
+              isrc=isrc,
+              artist=artist,
+              name=parsed_title.name,
+              mix_name=parsed_title.mix,
+              local_duration_s=float(row["duration_s"]),
+            )
+            store.put_raw(isrc, "beatport", raw_bp)
+            if match is not None:
+              bp_hits += 1
+            else:
+              bp_misses += 1
+
         fetched += 1
         credited = "credit" if recording else "no-credit"
         emit(
@@ -327,10 +382,16 @@ def cmd_resolve(args: argparse.Namespace) -> int:
       itunes.close()
       if discogs is not None:
         discogs.close()
+      if beatport is not None:
+        beatport.close()
 
     emit(f"resolved {fetched} fetched, {cached} already cached")
     emit(f"musicbrainz {mb_hits} found, {mb_misses} missing, {mb_errors} unavailable")
     emit(f"artwork {art_hits} verified, {art_misses} unverified (G5)")
+    if beatport is not None:
+      emit(f"beatport {bp_hits} matched, {bp_misses} not listed")
+    else:
+      emit("beatport skipped — genre from discogs/itunes")
   return 0
 
 
@@ -522,6 +583,9 @@ def build_parser() -> argparse.ArgumentParser:
   resolve = sub.add_parser("resolve", help="resolve identities into the sidecar")
   resolve.add_argument("--limit", type=int, default=0)
   resolve.add_argument("--refetch", action="store_true", help="ignore the cache")
+  resolve.add_argument(
+    "--no-beatport", action="store_true", help="skip tier 3 entirely (SPEC.md §5)"
+  )
   resolve.set_defaults(func=cmd_resolve)
 
   diff = sub.add_parser("diff", help="proposed changes, old to new")
