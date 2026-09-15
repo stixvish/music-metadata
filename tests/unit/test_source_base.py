@@ -1,7 +1,7 @@
 import httpx
 import pytest
 
-from music_metadata.sources.base import Source, SourceError
+from music_metadata.sources.base import RateLimitedError, Source, SourceError
 from music_metadata.sources.ratelimit import TokenBucket
 
 
@@ -193,26 +193,33 @@ def test_a_transport_error_is_retried_then_wrapped():
   assert len(attempts) == 2
 
 
-def test_an_absurd_retry_after_is_capped():
-  """a service asking for an hour parks a 1,494-track run on one track.
+def test_an_absurd_retry_after_stops_instead_of_sleeping():
+  """a service asking for hours is a quota ban, and must not park the run.
 
   this is the bug that stalled a full pass: the main thread sat in
-  `time.sleep` with zero CPU and no open connections, indefinitely.
+  `time.sleep` with zero CPU and no open connections, indefinitely. it is also
+  not something to retry through — measured 2026-09-14, spotify asked for
+  43,868 seconds, and the remaining attempts can only be refused.
   """
-  from music_metadata.sources.base import MAX_RETRY_AFTER_S
-
   attempts = []
 
   def handler(request):
     attempts.append(1)
-    if len(attempts) == 1:
-      return httpx.Response(429, headers={"retry-after": "86400"})
-    return httpx.Response(200, json={})
+    return httpx.Response(429, headers={"retry-after": "86400"})
 
   src = make_source(handler, retries=3)
-  src.get_json("/x")
+  with pytest.raises(RateLimitedError) as caught:
+    src.get_json("/x")
 
-  assert max(src.clock.slept) <= MAX_RETRY_AFTER_S
+  assert caught.value.retry_after == 86400.0
+  assert len(attempts) == 1, "a quota window must not burn the other attempts"
+  assert src.clock.slept == [], "and must not sleep on it either"
+
+
+def test_the_ban_message_names_the_service_and_the_hours():
+  src = make_source(lambda r: httpx.Response(429, headers={"retry-after": "43868"}))
+  with pytest.raises(RateLimitedError, match=r"12\.2h"):
+    src.get_json("/x")
 
 
 def test_a_reasonable_retry_after_is_still_honoured_exactly():
@@ -234,10 +241,28 @@ def test_the_total_wait_across_retries_is_bounded():
   """every sleep path has a ceiling, so a run can always make progress."""
   from music_metadata.sources.base import MAX_RETRY_AFTER_S
 
-  src = make_source(
-    lambda r: httpx.Response(503, headers={"retry-after": "99999"}), retries=5
-  )
+  # no `retry-after` at all: the fallback schedule is the only thing sleeping,
+  # and it still has to stay bounded.
+  src = make_source(lambda r: httpx.Response(503), retries=5)
   with pytest.raises(SourceError):
     src.get_json("/x")
 
   assert sum(src.clock.slept) <= MAX_RETRY_AFTER_S * 5
+
+
+def test_a_retry_after_given_as_an_http_date_falls_back_to_our_schedule():
+  """we do not parse dates; an unreadable header must not be read as zero."""
+  attempts = []
+
+  def handler(request):
+    attempts.append(1)
+    if len(attempts) == 1:
+      return httpx.Response(
+        429, headers={"retry-after": "Wed, 21 Oct 2026 07:28:00 GMT"}
+      )
+    return httpx.Response(200, json={})
+
+  src = make_source(handler, retries=3)
+  src.get_json("/x")
+
+  assert src.clock.slept == [1.0]

@@ -1274,6 +1274,42 @@ dependency for tier 0 — decrypts it, so no keychain access is reimplemented.
 site the operator is logged into, and writing all of it would turn one
 credential into dozens.
 
+**F56 — spotify's 429 is a 12-hour quota ban, not a burst cooldown.** measured
+2026-09-14 at 23:10, on a client-credentials token, after ~60 tracks of a full
+pass at 10 req/min:
+
+```text
+GET /v1/search?q=isrc:...   HTTP 429   Retry-After: 43868    (12.2 hours)
+```
+
+there is no `X-RateLimit-*` header — `Retry-After` is the only signal, and it is
+given in seconds.
+
+**this changes how a 429 has to be handled, in two ways.**
+
+first, the value is real advice and worth reading, but **not worth sleeping
+on**. F8's token bucket is sized for a _burst_ limit; 43,868 seconds is a rolling
+quota window, and no amount of backing off inside one run will clear it. the
+run has to end and resume after the window.
+
+second — and this is the expensive one — **skipping the track is worse than
+stopping.** `resolve` fetches spotify first and `continue`s past the rest of the
+track on failure, so a skipped track banks no musicbrainz, itunes or discogs
+either. carrying on after a ban therefore walks every remaining track, caches
+nothing, and re-asks a service that has already stated how long it will keep
+refusing. a measured pass did exactly that: 1,376 tracks of pure waste, and a
+plausible risk of extending the window.
+
+so `RateLimitedError` is raised the moment a `Retry-After` exceeds
+`MAX_RETRY_AFTER_S`, without spending the remaining attempts, and `resolve`
+stops the pass and reports the wall-clock time to resume. **everything already
+fetched stays cached**, so resuming costs only the tracks that were never
+reached.
+
+**the cap is not a maximum wait, it is the line between the two behaviours**: at
+or below it a server is throttling and waiting is correct; above it a server has
+cut us off and only stopping is.
+
 **F8 — rate limits are gentler in practice than documented.**
 published Starter is 6 req/min ([musicfetch.io](https://musicfetch.io/) pricing,
 checked 2026-09-14). measured: **20 sequential requests at 1 req/s, all HTTP

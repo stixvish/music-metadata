@@ -12,6 +12,7 @@ the ui can capture exactly what the CLI says.
 from __future__ import annotations
 
 import argparse
+import datetime
 import hashlib
 import shutil
 import sys
@@ -28,7 +29,7 @@ from music_metadata.naming import split_title
 from music_metadata.output import Level, emit
 from music_metadata.probe import ProbedFile, probe_tree
 from music_metadata.release import ReleaseCandidate, choose_release
-from music_metadata.sources.base import SourceError
+from music_metadata.sources.base import RateLimitedError, SourceError
 from music_metadata.sources.beatport import Beatport, Match, classify, tracks_from_raw
 from music_metadata.sources.bp_auth import CookieSessionProvider, NullProvider
 from music_metadata.sources.discogs import Discogs, release_from_raw
@@ -360,6 +361,22 @@ def cmd_resolve(args: argparse.Namespace) -> int:
           try:
             result = spotify.search_isrc(isrc)
             store.put_raw(isrc, "spotify", result.raw)
+          except RateLimitedError as exc:
+            # **a quota window ends the pass, it does not skip a track.** the
+            # per-track `continue` below skips musicbrainz, itunes and discogs
+            # too, so carrying on after a ban banks nothing at all — it just
+            # walks the remaining tracks re-asking a service that has already
+            # said no for the next twelve hours.
+            resume = datetime.datetime.now() + datetime.timedelta(
+              seconds=exc.retry_after
+            )
+            emit(
+              f"{exc} — stopping at track {index} of {len(rows)}. "
+              f"everything fetched so far is cached; "
+              f"re-run after {resume:%a %H:%M} to resume.",
+              level=Level.ERROR,
+            )
+            break
           except SourceError as exc:
             # **one track must never abort the run.** spotify rate-limits at
             # scale, and an uncaught 429 here killed a 1,439-track pass at

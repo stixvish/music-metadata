@@ -29,16 +29,41 @@ DEFAULT_TIMEOUT = httpx.Timeout(connect=10.0, read=30.0, write=10.0, pool=10.0)
 _RETRYABLE = {429, 500, 502, 503, 504}
 _BACKOFF_BASE = 1.0
 
-# **the longest we will honour a server's `Retry-After`.** a service asking us
-# to wait an hour is telling us to go away, and obeying it parks the whole run:
-# a 1,494-track pass sleeping on one track helps nobody, and the pipeline is
-# built so that a source contributing nothing is survivable (§5). beyond this we
-# stop retrying and let the call fail, which the caller already handles.
+# **the longest we will sit and wait on a `Retry-After`.** below this the
+# server is describing a burst limit and waiting is simply correct. above it,
+# the server is not throttling us — it has cut us off for a quota window, and
+# the only useful response is to stop the run and come back later.
+#
+# measured 2026-09-14: spotify answered a client-credentials `/v1/search` 429
+# with `Retry-After: 43868` — 12.2 hours. that is not a pause, it is a ban, and
+# it is why the two cases are handled differently.
 MAX_RETRY_AFTER_S = 60.0
 
 
 class SourceError(RuntimeError):
   """raised when a source fails in a way the caller cannot treat as a miss."""
+
+
+class RateLimitedError(SourceError):
+  """the service has cut us off for a window measured in hours, not seconds.
+
+  **this is not a per-track failure and must not be handled as one.** skipping
+  the track and moving to the next one re-asks a service that has already said
+  no, for every remaining track, which banks nothing and risks extending the
+  window. the caller stops the pass and reports when it can resume.
+  """
+
+  def __init__(self, service: str, retry_after: float) -> None:
+    """Build the error.
+
+    Args:
+      service: the source that cut us off.
+      retry_after: seconds it asked us to wait.
+    """
+    self.service = service
+    self.retry_after = retry_after
+    hours = retry_after / 3600.0
+    super().__init__(f"{service}: rate-limited for {retry_after:.0f}s ({hours:.1f}h)")
 
 
 class Source:
@@ -130,7 +155,14 @@ class Source:
         return None
       if response.status_code in _RETRYABLE:
         last = f"HTTP {response.status_code}"
-        self._back_off(attempt, response.headers.get("retry-after"))
+        advice = response.headers.get("retry-after")
+        # a wait we will not sit through is a quota window, not a burst limit.
+        # fail immediately rather than spending the remaining attempts asking a
+        # service that has already told us how long it will keep saying no.
+        requested = _parse_retry_after(advice)
+        if requested is not None and requested > MAX_RETRY_AFTER_S:
+          raise RateLimitedError(self.name, requested)
+        self._back_off(attempt, advice)
         continue
       if response.is_error:
         msg = f"{self.name}: HTTP {response.status_code} for {path}"
@@ -154,13 +186,26 @@ class Source:
       retry_after: the `Retry-After` header, when the service sent one.
     """
     fallback = _BACKOFF_BASE * (2 ** (attempt - 1))
-    if retry_after is None:
-      self._sleep(fallback)
-      return
-    try:
-      requested = float(retry_after)
-    except ValueError:
-      # a Retry-After can be an HTTP date; fall back to our own schedule.
+    requested = _parse_retry_after(retry_after)
+    if requested is None:
+      # absent, or an HTTP date we do not parse; fall back to our own schedule.
       self._sleep(fallback)
       return
     self._sleep(min(requested, MAX_RETRY_AFTER_S))
+
+
+def _parse_retry_after(value: str | None) -> float | None:
+  """Read a `Retry-After` header expressed in seconds.
+
+  Args:
+    value: the raw header, when the service sent one.
+
+  Returns:
+    The seconds requested, or None when absent or given as an HTTP date.
+  """
+  if value is None:
+    return None
+  try:
+    return float(value)
+  except ValueError:
+    return None
