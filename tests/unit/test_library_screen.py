@@ -177,3 +177,47 @@ def test_the_table_is_capped(client):
 
   assert body.count("<tr>") - 1 == _PAGE
   assert "narrow the filter" in body
+
+
+def test_the_album_column_is_populated_from_the_cache(client):
+  """§14 lists album among the filterable columns; an always-empty column is
+  worse than no column."""
+  client.store.put_file("*NSYNC - Bye Bye Bye.aiff", "m2", 200.4, "USJI10000001")
+  client.store.put_raw(
+    "USJI10000001",
+    "spotify",
+    {
+      "pages": [
+        {
+          "tracks": {
+            "items": [
+              {
+                "id": "t",
+                "name": "Bye Bye Bye",
+                "duration_ms": 200400,
+                "track_number": 1,
+                "disc_number": 1,
+                "artists": [{"name": "*NSYNC"}],
+                "album": {
+                  "id": "a",
+                  "name": "No Strings Attached",
+                  "album_type": "album",
+                  "total_tracks": 12,
+                  "release_date": "2000-03-21",
+                  "artists": [{"name": "*NSYNC"}],
+                },
+              }
+            ]
+          }
+        }
+      ]
+    },
+  )
+
+  assert "No Strings Attached" in client.get("/rows").text
+
+
+def test_a_track_with_no_cached_release_has_a_blank_album(client):
+  client.store.put_file("x - y.aiff", "m9", 100.0, "ZZ000000001")
+
+  assert client.get("/rows").status_code == 200

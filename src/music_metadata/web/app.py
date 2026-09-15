@@ -17,6 +17,8 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from music_metadata.release import choose_release
+from music_metadata.sources.spotify import candidates_from_raw
 from music_metadata.store import Store
 from music_metadata.web import jobs
 
@@ -279,9 +281,22 @@ def _library_context(store: Store, q: str, state: str, sort: str) -> dict[str, o
   key = sort if sort in dict(_COLUMNS) else "file"
   out.sort(key=lambda r: str(r.get(key, "")).lower())
 
+  # album comes from the cached spotify payload, and only for the rows actually
+  # rendered — parsing 1,494 payloads to show 300 of them would make every
+  # keystroke in the filter box cost a second.
+  page = out[:_PAGE]
+  for entry in page:
+    entry_isrc = entry["isrc"]
+    if not entry_isrc:
+      continue
+    cached = store.get_raw(str(entry_isrc), "spotify")
+    chosen = choose_release(candidates_from_raw(cached))
+    if chosen is not None:
+      entry["album"] = chosen.album_name
+
   return {
-    "rows": out[:_PAGE],
-    "shown": min(len(out), _PAGE),
+    "rows": page,
+    "shown": len(page),
     "total": total,
     "q": q,
     "state": state,

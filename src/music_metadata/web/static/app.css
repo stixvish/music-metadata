@@ -237,8 +237,13 @@ select {
  * dense by intent: this is a scanning surface. the wrapper scrolls on narrow
  * screens rather than letting the page scroll sideways.
  */
+/* deliberately NOT a scroll container at desktop widths: an `overflow` value
+ * other than `visible` makes `position: sticky` inside resolve against this
+ * box instead of the viewport, and the sticky header lands on top of the first
+ * row. horizontal scrolling is only needed when the columns stop fitting, so
+ * it is switched on in the narrow breakpoint — where the sticky header is
+ * switched off in exchange. */
 .scroll {
-  overflow-x: auto;
   margin: 0 calc(-1 * var(--space-5));
   padding: 0 var(--space-5);
 }
@@ -267,9 +272,13 @@ thead th {
   position: sticky;
   top: 3.25rem;
   z-index: 1;
-  background: var(--chrome);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  /* nearly opaque, unlike the nav. §12 warns against stacking translucent
+   * surfaces, and a row sliding under a 0.72-alpha header stays legible enough
+   * to read as a second row of data — which is worse than no translucency. */
+  background: color-mix(in srgb, var(--bg) 94%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 1px 0 var(--line);
   color: var(--muted);
   font-weight: 500;
   white-space: nowrap;
@@ -422,13 +431,18 @@ progress::-webkit-progress-value {
     padding-inline: var(--space-3);
   }
 
+  .scroll {
+    overflow-x: auto;
+  }
+
+  /* see the note on .scroll: sticky cannot work inside a scroll container. */
+  thead th {
+    position: static;
+  }
+
   .filters {
     flex-direction: column;
     align-items: stretch;
-  }
-
-  thead th {
-    top: 3rem;
   }
 }
 

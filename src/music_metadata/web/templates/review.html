@@ -2,10 +2,12 @@
 {% block title %}review · music-metadata{% endblock %}
 {% block content %}
     <h1>review queue</h1>
-    <p class="empty">
-        {{ total }} tracks flagged. the gates refuse to guess — these are the
-        decisions the pipeline declined to make on its own.
-    </p>
+    {% if total %}
+        <p class="empty">
+            {{ total }} tracks flagged. the gates refuse to guess — these are the
+            decisions the pipeline declined to make on its own.
+        </p>
+    {% endif %}
     {% for gate, rows in groups.items() %}
         <section class="gate">
             <h2>
