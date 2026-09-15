@@ -30,6 +30,21 @@ from music_metadata.config import CONFIG_DIR
 
 SESSION_URL = "https://www.beatport.com/api/auth/session"
 
+# **a browser User-Agent is mandatory, and this is not cosmetic.** F6 records
+# that cloudflare fronts the *web* host, and `/api/auth/session` is on the web
+# host. the `cf_clearance` cookie in the exported jar is bound to the
+# User-Agent that obtained it, so sending a different one fails the challenge:
+#
+#   no UA        HTTP 403  "Just a moment..."   (the cloudflare interstitial)
+#   browser UA   HTTP 200  {"token": {"accessToken": ...}}
+#
+# measured 2026-09-14. this is why the export has to come from the same browser
+# the session was created in.
+BROWSER_USER_AGENT = (
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+  "(KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
+)
+
 COOKIE_FILE = CONFIG_DIR / "beatport-cookies.txt"
 
 # F11 measured `expiresIn` at 599 seconds. re-mint with room to spare rather
@@ -118,7 +133,13 @@ class CookieSessionProvider:
     if not cookies:
       return None
 
-    client = httpx.Client(timeout=_TIMEOUT, transport=self._transport, cookies=cookies)
+    client = httpx.Client(
+      timeout=_TIMEOUT,
+      transport=self._transport,
+      cookies=cookies,
+      headers={"User-Agent": BROWSER_USER_AGENT},
+      follow_redirects=True,
+    )
     try:
       response = client.get(SESSION_URL)
     except httpx.HTTPError:

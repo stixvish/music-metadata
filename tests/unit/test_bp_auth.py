@@ -194,3 +194,30 @@ def test_the_oauth_provider_reports_available_once_credentials_exist():
 def test_the_null_provider_supplies_nothing():
   assert NullProvider().get() is None
   assert NullProvider().available is False
+
+
+def test_a_browser_user_agent_is_sent(tmp_path):
+  """measured: cloudflare returns 403 "Just a moment..." without one.
+
+  `cf_clearance` in the exported jar is bound to the User-Agent that obtained
+  it, and `/api/auth/session` sits on the cloudflare-fronted web host (F6).
+  """
+  seen = {}
+
+  def handler(request):
+    seen["ua"] = request.headers.get("user-agent", "")
+    return httpx.Response(200, json=SESSION)
+
+  provider(tmp_path, handler).get()
+
+  assert "Mozilla/5.0" in seen["ua"]
+  assert "Chrome/" in seen["ua"]
+
+
+def test_a_cloudflare_challenge_yields_no_token(tmp_path):
+  """the interstitial is HTML with a 403, not a session."""
+  got = provider(
+    tmp_path, lambda r: httpx.Response(403, text="<html>Just a moment...</html>")
+  ).get()
+
+  assert got is None
