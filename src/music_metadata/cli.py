@@ -12,6 +12,7 @@ the ui can capture exactly what the CLI says.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import shutil
 import sys
 from dataclasses import fields
@@ -21,6 +22,8 @@ from music_metadata import library_map
 from music_metadata.arbitrate import Resolved, arbitrate
 from music_metadata.artwork import Artwork, resolve_artwork
 from music_metadata.config import DEFAULT_SIDECAR, get, load_env, require
+from music_metadata.credit import resolve_credit
+from music_metadata.dedup import TrackFile
 from music_metadata.naming import split_title
 from music_metadata.output import Level, emit
 from music_metadata.probe import ProbedFile, probe_tree
@@ -39,6 +42,18 @@ from music_metadata.sources.musicbrainz import (
 from music_metadata.sources.spotify import Spotify, candidates_from_raw
 from music_metadata.store import Store
 from music_metadata.tag import Tags, read_tags, write_tags
+from music_metadata.verify import (
+  REQUIRED_FIELDS,
+  Report,
+  duplicate_report,
+  gate_g1_identity,
+  gate_g2_completeness,
+  gate_g4_non_destruction,
+  gate_g5_artwork,
+  gate_g6_credit,
+  gate_g9_no_contamination,
+  gate_g11_no_duplicates,
+)
 
 DEFAULT_LIBRARY = Path.home() / "Music/library"
 
@@ -513,6 +528,133 @@ def cmd_apply(args: argparse.Namespace) -> int:
   return 0
 
 
+def tree_checksum(root: Path) -> str:
+  """One hash over every audio file in a tree, for G4.
+
+  §8: the source tree's bytes are unchanged **asserted by checksum, not by
+  inspection**. hashing the container rather than the decoded audio is right
+  here — a tag write changes the container, which is exactly what must not
+  happen to the source.
+
+  Args:
+    root: the directory to hash.
+
+  Returns:
+    A hex digest over every audio file, in sorted path order.
+  """
+  digest = hashlib.sha256()
+  for path in sorted(root.rglob("*")):
+    if path.is_file() and path.suffix.lower() in {".aiff", ".aif", ".wav"}:
+      digest.update(path.name.encode())
+      digest.update(hashlib.sha256(path.read_bytes()).digest())
+  return digest.hexdigest()
+
+
+def cmd_verify(args: argparse.Namespace) -> int:
+  """Assert the gates over an output tree (§8).
+
+  Args:
+    args: parsed arguments.
+
+  Returns:
+    0 when every gate met its target, 1 otherwise.
+  """
+  with Store.open(args.sidecar) as store:
+    rows = store.query("SELECT * FROM files ORDER BY path")
+    if not rows:
+      emit("nothing to verify — run `probe` first", level=Level.WARN)
+      return 1
+
+    with_isrc = [r for r in rows if r["isrc_from_tag"]]
+    resolved = sum(
+      1 for r in with_isrc if store.get_raw(r["isrc_from_tag"], "spotify") is not None
+    )
+
+    source_files = [
+      TrackFile(
+        path=r["path"],
+        audio_md5=r["audio_md5"],
+        duration_s=float(r["duration_s"]),
+        isrc=r["isrc_from_tag"],
+      )
+      for r in rows
+    ]
+
+    output = list(probe_tree(args.out)) if args.out.is_dir() else []
+    out_files = [
+      TrackFile(
+        path=str(p.path), audio_md5=p.audio_md5, duration_s=p.duration_s, isrc=p.isrc
+      )
+      for p in output
+    ]
+
+    complete = 0
+    contamination = 0
+    artwork_present = 0
+    by_md5 = {r["audio_md5"]: r for r in rows}
+    for probed in output:
+      tags = read_tags(probed.path)
+      if all(getattr(tags, name) is not None for name in REQUIRED_FIELDS):
+        complete += 1
+      if tags.artwork:
+        artwork_present += 1
+      origin = by_md5.get(probed.audio_md5)
+      # G9: the written ISRC must be the file's own, never a source's.
+      if origin and origin["isrc_from_tag"] and tags.isrc != origin["isrc_from_tag"]:
+        contamination += 1
+
+    counts = store.review_counts()
+
+    # G6's population is **tracks where a cross-check actually happened** —
+    # musicbrainz had the recording and the filename carried a credit. counting
+    # every track would dilute the rate with tracks that were never compared.
+    agree = disagree = 0
+    for row in with_isrc:
+      recording = recording_from_raw(store.get_raw(row["isrc_from_tag"], "musicbrainz"))
+      if recording is None:
+        continue
+      result = resolve_credit(Path(row["path"]).stem, musicbrainz=recording.credit)
+      if result.agrees is True:
+        agree += 1
+      elif result.agrees is False:
+        disagree += 1
+
+    duplicates, dup_gate = duplicate_report(source_files)
+
+    report = Report(duplicates=duplicates)
+    report.gates.append(gate_g1_identity(len(with_isrc), resolved))
+    report.gates.append(gate_g2_completeness(complete, len(output)))
+    if args.checksum_before:
+      report.gates.append(
+        gate_g4_non_destruction(args.checksum_before, tree_checksum(args.library))
+      )
+    report.gates.append(gate_g5_artwork(artwork_present, counts.get("no-artwork", 0)))
+    report.gates.append(gate_g6_credit(agree=agree, disagree=disagree))
+    report.gates.append(gate_g9_no_contamination(contamination))
+    report.gates.append(gate_g11_no_duplicates(out_files))
+    report.gates.append(dup_gate)
+
+    for gate in report.gates:
+      emit(str(gate))
+      if gate.detail:
+        emit(f"      {gate.detail}")
+
+    if duplicates:
+      emit("")
+      emit("§11a duplicates — class A is auto-resolvable, class B is not:")
+      for entry in duplicates:
+        emit(f"  [{entry.kind.value}] {entry.reason}")
+        for member in entry.files:
+          emit(f"      {member.path}")
+
+    emit("")
+    if report.passed:
+      emit(f"all {len(report.gates)} gates met their target")
+      return 0
+    emit(f"{len(report.failures)} gate(s) did not meet target", level=Level.ERROR)
+    return 1
+
+
 def cmd_map(args: argparse.Namespace) -> int:
   """Render the map for scanning (§9c). Read-only.
 
@@ -547,6 +689,19 @@ def cmd_map(args: argparse.Namespace) -> int:
       )
     )
   emit(f"{shown} of {len(rows)} rows")
+  return 0
+
+
+def cmd_checksum(args: argparse.Namespace) -> int:
+  """Print a tree's checksum, so G4 can be asserted across a run.
+
+  Args:
+    args: parsed arguments.
+
+  Returns:
+    Process exit code.
+  """
+  emit(tree_checksum(args.library))
   return 0
 
 
@@ -599,6 +754,19 @@ def build_parser() -> argparse.ArgumentParser:
   apply_.add_argument("--map", type=Path, default=Path("library.toml"))
   apply_.add_argument("--limit", type=int, default=0)
   apply_.set_defaults(func=cmd_apply)
+
+  verify = sub.add_parser("verify", help="assert the gates over an output tree")
+  verify.add_argument("--library", type=Path, default=DEFAULT_LIBRARY)
+  verify.add_argument("--out", type=Path, required=True)
+  verify.add_argument(
+    "--checksum-before",
+    help="the source tree's checksum before the run, to assert G4",
+  )
+  verify.set_defaults(func=cmd_verify)
+
+  checksum = sub.add_parser("checksum", help="hash a tree, for G4")
+  checksum.add_argument("--library", type=Path, default=DEFAULT_LIBRARY)
+  checksum.set_defaults(func=cmd_checksum)
 
   map_ = sub.add_parser("map", help="render the map for scanning")
   map_.add_argument("--map", type=Path, default=Path("library.toml"))
