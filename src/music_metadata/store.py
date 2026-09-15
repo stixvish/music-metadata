@@ -74,6 +74,12 @@ class Store:
     conn.row_factory = sqlite3.Row
     # foreign keys are off by default in sqlite and silently ignore violations.
     conn.execute("PRAGMA foreign_keys = ON")
+    # **WAL, so the ui can be browsed while a resolve is writing.** the default
+    # `delete` journal gives a writer an exclusive lock and readers get
+    # SQLITE_BUSY — which would mean the library screen throwing errors for the
+    # hours a full run takes. §14 makes the ui the primary interface; it cannot
+    # be unusable exactly when there is something to watch.
+    conn.execute("PRAGMA journal_mode = WAL")
     try:
       conn.executescript(_SCHEMA.read_text())
       yield cls(conn)

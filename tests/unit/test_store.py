@@ -203,3 +203,22 @@ def test_artwork_with_no_candidate_is_not_counted(store):
   store.put_artwork("A", "Album", None, "url", 3000, "sha", "path")
 
   assert store.artwork_by_candidate() == {}
+
+
+def test_the_database_is_in_wal_mode(store):
+  """§14: the ui must be browsable while a resolve writes for hours.
+
+  the default `delete` journal gives a writer an exclusive lock and readers
+  SQLITE_BUSY; WAL lets them run concurrently.
+  """
+  mode = store.query("PRAGMA journal_mode")[0][0]
+
+  assert mode.lower() == "wal"
+
+
+def test_a_reader_is_not_blocked_by_an_open_writer(tmp_path):
+  path = tmp_path / "sidecar.sqlite"
+  with Store.open(path) as writer:
+    writer.put_file(path="a.aiff", audio_md5="x", duration_s=1.0, isrc="A")
+    with Store.open(path) as reader:
+      assert len(reader.query("SELECT * FROM files")) == 1
