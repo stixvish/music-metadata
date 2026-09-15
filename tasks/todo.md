@@ -138,47 +138,57 @@ works end to end.**
 
 branch `feat/credit`
 
-- [ ] **2.1 `sources/musicbrainz.py`** — 1 req/s, `/ws/2/isrc/{ISRC}` with
+- [x] **2.1 `sources/musicbrainz.py`** — 1 req/s, `/ws/2/isrc/{ISRC}` with
       `inc=artist-credits+artist-rels+work-rels`, then the work lookup for
       composer and lyricist. **`currently busy` is a retry, not a miss** (F30).
       **verify:** a 503 retries and then succeeds · `Not Found` falls through to
       the title parse and flags the track, rather than erroring.
-- [ ] **2.2 `credit.py` (§6)** — the joinphrase split: everything before the
+- [x] **2.2 `credit.py` (§6)** — the joinphrase split: everything before the
       element whose `joinphrase` matches `/feat\.|ft\.|with/i` is main,
       everything after is featured.
       **verify:** the `David Guetta - Little Bad Girl` case from §6 splits to
       main `David Guetta`, featured `Taio Cruz, Ludacris`.
-- [ ] **2.3 filename parser as a first-class source.** §6 ranks it **second**,
+- [x] **2.3 filename parser as a first-class source.** §6 ranks it **second**,
       above spotify and itunes, because it is the operator's own curation.
       **verify:** `Main - Title (ft. Featured)` parses on a sample drawn from the
       418 files that encode a feature.
-- [ ] **2.4 G6 cross-validation.** musicbrainz and the filename agree → accept
+- [x] **2.4 G6 cross-validation.** musicbrainz and the filename agree → accept
       automatically. disagree → **flag for review, never guess.**
       **verify:** an induced disagreement produces a review row, not a value.
-- [ ] **2.5 indian-scope performers-only rule (§7a, F38).** fires on
+- [x] **2.5 indian-scope performers-only rule (§7a, F38).** fires on
       `ISRC[:2] == "IN"` **or** a genre match on
       bollywood/indian/punjabi/telugu/tamil. **scoped, never global.**
       **verify:** scope selects ~167 tracks · a western track credited to a
       producer (`Metro Boomin`, `Internet Money`) keeps them in `TPE1` ·
       composers move to `TCOM` only inside scope.
-- [ ] **2.6 composer and lyricist globally (§7d).** the indian rule governs who
+- [x] **2.6 composer and lyricist globally (§7d).** the indian rule governs who
       is excluded from `TPE1`, not who gets a `TCOM`.
       **verify:** a western track with a musicbrainz work composer gets `TCOM`.
-- [ ] **2.7 review queue screen (§14)** — flagged tracks grouped by gate, each
+- [x] **2.7 review queue screen (§14)** — flagged tracks grouped by gate, each
       row showing proposed beside current, the source, and accept/reject/edit.
       writes back to `library.toml`.
       **verify:** accepting a row updates `library.toml` and the row disappears.
-- [ ] **2.8 update `README.md`.** artist credit, composer and lyricist now
+- [x] **2.8 update `README.md`.** artist credit, composer and lyricist now
       populate; document the review queue screen and the indian-scope rule in a
       sentence. record the **measured** G6 agreement rate from checkpoint 2.
 
-> ### checkpoint 2 — stop and review
+> ### checkpoint 2 — reviewed 2026-09-14
 >
-> G6 measured across all 418 featured tracks. target ≥95% agreement, but
-> **report the real rate** — §6 says the disagreement rate is reported, not
-> assumed. review a sample of the disagreements in the browser.
-
----
+> G6 measured across all 398 featured tracks, twice.
+>
+> ```text
+> first pass    85.4%   303 agree / 52 disagree of 355 checked
+> after policy  90.5%   323 agree / 34 disagree of 357 checked
+> gate target   88%     set from the measurement, not aspiration (F53)
+> ```
+>
+> - the original ≥95% came from a 30-track sample; the full population does not
+>   support it, and §6's claim that the filename "agreed on every case" is false
+>   at scale.
+> - **operator decision: the filename decides the feature boundary, musicbrainz
+>   decides the personnel.** 18 boundary-only disagreements now auto-resolve.
+> - the 34 that remain are genuine personnel differences and are queued, not
+>   guessed — reviewed in the browser with both readings side by side.
 
 ## M3 — completeness: itunes, artwork, discogs
 

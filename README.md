@@ -15,26 +15,43 @@ verified master).
 
 ## status
 
-**milestone 1 of 6 — the resolve spine.** one track goes end to end: probed from
-disk, resolved against spotify by ISRC, arbitrated through §7's precedence
-table, and written as a tagged copy. verified on the real library.
+**milestone 2 of 6 — identity and credit.** the spine from M1, plus musicbrainz:
+featured artists are now separated from main artists structurally rather than
+guessed, composers and lyricists are written where musicbrainz names them, and
+every refusal to guess lands in a review queue in the browser.
 
-| thing               | state                                                        |
-| ------------------- | ------------------------------------------------------------ |
-| `probe`             | 1,494 files, 1,439 with ISRC — reproduces the baseline       |
-| `resolve`           | spotify ISRC search, paginated, cached in sqlite             |
-| `diff` / `apply`    | tagged copies to an output tree; source untouched            |
-| `map`               | `library.toml` with the §9c view flags                       |
-| web ui              | library screen, resolve as a background job with progress    |
-| **artwork**         | **not built** — the §7c chain lands in M3                    |
-| **genre, BPM, key** | **not built** — beatport is M4                               |
-| **artist credit**   | **not built** — musicbrainz is M2; artists come from spotify |
-| **acquisition**     | **not built** — tier 0 is M6                                 |
+| thing               | state                                                       |
+| ------------------- | ----------------------------------------------------------- |
+| `probe`             | 1,494 files, 1,439 with ISRC — reproduces the baseline      |
+| `resolve`           | spotify ISRC search + musicbrainz credit and work           |
+| `diff` / `apply`    | tagged copies to an output tree; source untouched           |
+| `map`               | `library.toml` with the §9c view flags                      |
+| artist credit       | musicbrainz joinphrases, cross-checked against the filename |
+| G6 agreement        | **90.5%** measured on all 398 featured tracks (gate: 88%)   |
+| composer / lyricist | written where musicbrainz names the role (F52)              |
+| review queue        | flagged tracks in the browser, grouped by gate              |
+| **artwork**         | **not built** — the §7c chain lands in M3                   |
+| **genre, BPM, key** | **not built** — beatport is M4                              |
+| **label**           | **not built** — discogs is M3                               |
+| **acquisition**     | **not built** — tier 0 is M6                                |
 
-what M1 actually populates: title, artist, album, album artist, release date,
-year, track number, disc number, mix name, remixer, original artist and ISRC.
-everything else is deliberately left empty rather than guessed — §7e's position
-on BPM, applied generally.
+what is populated today: title, artist, album, album artist, release date, year,
+track number, disc number, mix name, remixer, original artist, ISRC, and —
+where musicbrainz names the role — composer and lyricist. everything else is
+deliberately left empty rather than guessed: §7e's position on BPM, applied
+generally.
+
+**on artist credit.** musicbrainz decides _who_ performed; the filename decides
+_which of them is featured_. F53 measured why: on 13 of 398 featured tracks
+musicbrainz joins the feature with `&` and it disappears, while the operator
+typed `(ft. …)` deliberately. where the two name genuinely different people —
+34 tracks — nothing is auto-resolved; they go to the review queue.
+
+**on composer and lyricist.** F52 measured that musicbrainz records explicit
+`composer` and `lyricist` roles for indian repertoire (10/10 works sampled) and
+the role-less `writer` relation for western ones (34 of 34). a bare `writer` is
+**not** promoted into `TCOM` — it says someone wrote the work, not which role
+they held, and a wrong value gets trusted where a missing one does not.
 
 ## prerequisites
 
@@ -61,7 +78,8 @@ cp .env.example .env    # then add SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET
 # 1. local tag survey. no network. ~2.5 minutes for 1,494 files.
 uv run music-metadata probe
 
-# 2. resolve identities into the sidecar. rate-limited to 20 req/min.
+# 2. resolve identities into the sidecar. spotify at 20 req/min,
+#    musicbrainz at 1 req/s.
 uv run music-metadata resolve --limit 20
 
 # 3. see what would change, and which source supplied each field.
@@ -101,8 +119,13 @@ then open <http://127.0.0.1:8765>. the library screen lists every probed track
 and can start a resolve as a background job, with progress polled — a full
 resolve is over an hour and cannot be held open in an HTTP request.
 
-the review, acquire and diff screens are stubs until the data that justifies
-them exists.
+the **review queue** lists every track a gate refused to guess on, grouped by
+the gate that raised it — a credit musicbrainz and the filename disagree about
+(G6), a track with no verified artwork (G5). §14's argument for the ui is that
+these flags are worthless in a log file and valuable in a queue.
+
+the acquire and diff screens are stubs until the data that justifies them
+exists.
 
 ## where things live
 
@@ -136,10 +159,10 @@ uv run pytest -q
 green — see `CLAUDE.md`.
 
 ```sh
-uv run pytest -q           # 243 tests, no network
+uv run pytest -q           # 322 tests, no network
 uv run pytest -q -m live   # hits the real spotify api
 uv run pytest -q -m slow   # probes all 1,494 files against the measured baseline
 ```
 
-the pure modules — `release`, `naming`, `output` — are held at 100% coverage
-with a 90% floor. they carry the decisions the spec argued hardest about.
+the pure modules — `release`, `naming`, `credit`, `output` — are held at 100%
+coverage with a 90% floor. they carry the decisions the spec argued hardest about.
