@@ -314,23 +314,23 @@ branch `feat/beatport`
 
 branch `feat/verify`
 
-- [ ] **5.1 `verify.py` — G1 through G11.** each gate reports a real number
+- [x] **5.1 `verify.py` — G1 through G11.** each gate reports a real number
       against its target, not a pass/fail bit.
       **verify:** run against the M1 output tree; every gate produces a count.
-- [ ] **5.2 G10 ISRC trust.** compare local duration to the duration the ISRC's
+- [x] **5.2 G10 ISRC trust.** compare local duration to the duration the ISRC's
       recording claims (F40). >±5s means the ISRC does not describe this file:
       strip it, route to tier-0 identity, queue for review. **no field resolved
       from an untrusted ISRC is ever written.**
       **verify:** the known class-C case from `cache/dupisrc.txt` is caught.
-- [ ] **5.3 duplicates (§11a), three classes and three policies.** class A (same
+- [x] **5.3 duplicates (§11a), three classes and three policies.** class A (same
       ISRC **and** same md5) is the **only** automatic one. **deletion is always
       to a quarantine directory, never `rm`.**
       **verify:** the 6 known duplicates in `cache/dupaudio.txt` and
       `cache/dupisrc.txt` classify into A/B/C correctly · nothing is deleted
       outright.
-- [ ] **5.4 G11 no duplicates in the output tree.**
+- [x] **5.4 G11 no duplicates in the output tree.**
       **verify:** no two output files share an audio md5.
-- [ ] **5.5 diff and apply screen**, with apply behind an explicit confirmation.
+- [x] **5.5 diff and apply screen**, with apply behind an explicit confirmation.
       **verify:** apply cannot be triggered without confirming.
 - [ ] **5.6 the full run — 1,494 tracks.** hours at 20 req/min, so it runs as a
       background job.
