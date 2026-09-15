@@ -172,13 +172,23 @@ branch `feat/credit`
       populate; document the review queue screen and the indian-scope rule in a
       sentence. record the **measured** G6 agreement rate from checkpoint 2.
 
-> ### checkpoint 2 — stop and review
+> ### checkpoint 2 — reviewed 2026-09-14
 >
-> G6 measured across all 418 featured tracks. target ≥95% agreement, but
-> **report the real rate** — §6 says the disagreement rate is reported, not
-> assumed. review a sample of the disagreements in the browser.
-
----
+> G6 measured across all 398 featured tracks, twice.
+>
+> ```text
+> first pass    85.4%   303 agree / 52 disagree of 355 checked
+> after policy  90.5%   323 agree / 34 disagree of 357 checked
+> gate target   88%     set from the measurement, not aspiration (F53)
+> ```
+>
+> - the original ≥95% came from a 30-track sample; the full population does not
+>   support it, and §6's claim that the filename "agreed on every case" is false
+>   at scale.
+> - **operator decision: the filename decides the feature boundary, musicbrainz
+>   decides the personnel.** 18 boundary-only disagreements now auto-resolve.
+> - the 34 that remain are genuine personnel differences and are queued, not
+>   guessed — reviewed in the browser with both readings side by side.
 
 ## M3 — completeness: itunes, artwork, discogs
 
