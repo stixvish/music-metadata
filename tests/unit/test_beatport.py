@@ -315,3 +315,51 @@ def test_a_miss_still_returns_the_payload_it_searched():
 
   assert match is None
   assert raw == body
+
+
+def test_an_unauthorised_response_is_counted_not_hidden():
+  """§5 says this tier may contribute nothing; it does not say it may fail
+  invisibly.
+
+  a 401 answered every query for a whole pass once, and all 60 tracks were
+  reported as "not on beatport" — indistinguishable from a real miss.
+  """
+  import httpx
+
+  from music_metadata.sources.beatport import Beatport
+  from music_metadata.sources.ratelimit import TokenBucket
+
+  class Token:
+    def get(self):
+      return "t"
+
+  bp = Beatport(
+    tokens=Token(),
+    bucket=TokenBucket(10_000),
+    transport=httpx.MockTransport(lambda r: httpx.Response(401, json={})),
+  )
+  hit, _ = bp.by_isrc("USQX92100617")
+
+  assert hit is None, "still a miss downstream — the run must not stop"
+  assert bp.unauthorised == 1, "but the reason is recorded"
+
+
+def test_a_real_miss_is_not_counted_as_a_failure():
+  import httpx
+
+  from music_metadata.sources.beatport import Beatport
+  from music_metadata.sources.ratelimit import TokenBucket
+
+  class Token:
+    def get(self):
+      return "t"
+
+  bp = Beatport(
+    tokens=Token(),
+    bucket=TokenBucket(10_000),
+    transport=httpx.MockTransport(lambda r: httpx.Response(200, json={"results": []})),
+  )
+  bp.by_isrc("USQX92100617")
+
+  assert bp.failures == 0
+  assert bp.unauthorised == 0

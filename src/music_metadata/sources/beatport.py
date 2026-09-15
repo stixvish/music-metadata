@@ -159,6 +159,9 @@ class Beatport:
       sleep: injectable sleep, for backoff.
     """
     self._tokens = tokens
+    self.failures = 0
+    self.unauthorised = 0
+    self.no_token = False
     self._source = Source(
       name="beatport",
       base_url=_API,
@@ -184,11 +187,20 @@ class Beatport:
     """
     token = self._tokens.get()
     if token is None:
+      self.no_token = True
       return None
     self._source.set_header("Authorization", f"Bearer {token}")
     try:
       return self._source.get_json(path, params=params)
-    except SourceError:
+    except SourceError as exc:
+      # **still never raises** (§5) — but a swallowed failure is recorded.
+      # a 401 answered every query for a whole pass once, and every track was
+      # reported as "not on beatport". zero results is a normal outcome; zero
+      # results *because we were never authenticated* is not, and the two are
+      # indistinguishable downstream unless counted here.
+      self.failures += 1
+      if exc.status == httpx.codes.UNAUTHORIZED:
+        self.unauthorised += 1
       return None
 
   def by_isrc(self, isrc: str) -> tuple[BeatportTrack | None, JsonValue]:
