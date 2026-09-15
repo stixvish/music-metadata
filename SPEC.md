@@ -2516,56 +2516,43 @@ raw payloads, and only rows with **no** raw payload are re-fetched.
 live data — a recording's ISRC, composer and release list do not change. refetch
 only on explicit request, or when a field was never successfully resolved.
 
-## 9b. `library.toml` — one map, generated and editable
+## 9b. two files: `library.toml` is generated, `overrides.toml` is yours
 
-**every run produces one file: `library.toml`, one entry per audio file, keyed by
-decoded-audio md5 (F44).** ~1,494 entries. it is the map, the override file and
-the worklist at once — an earlier draft split these into three artefacts, which
-meant the operator had to know which one to open.
+**this section originally specified one file doing both jobs**, on the reasoning
+that the operator should not have to know which artefact to open. that was
+wrong, and the way it failed is the reason the split exists:
 
-```toml
-["446fd65a7c0be5bd83448b5a04bb7035"]
-file     = "Calvin Harris, Clementine Douglas & Odd Mob - Blessings [Odd Mob Remix].aiff"
-title    = "Blessings - Odd Mob Remix"
-artist   = "Calvin Harris, Clementine Douglas, Odd Mob"
-album    = "Blessings - The Remixes (Part 2)"
-isrc     = "GBARL2501127"
-spotify  = "https://open.spotify.com/track/1Z2HuPvdKhdlIbHst99MnR"
-itunes   = "https://music.apple.com/us/album/1829498271"
-beatport = ""        # not found
+- telling an edit from a generated value inside one file meant remembering what
+  was generated last run, in a third place (`map_generated`). when an
+  **algorithm** changed — §7b's edition preference — 15 album names moved and
+  every one then read as hand-typed. each would have pinned itself permanently.
+- the file holding the operator's edits was also the file the pipeline rewrote.
+  regenerating the map is a normal operation, and **a normal operation must
+  never be able to destroy authored work.** it did: a beatport URL the operator
+  had pasted was lost to a routine `map --regenerate`.
 
-["88a0bc73ae97ee9c7744de964e5abf8e"]
-file     = "A$AP Rocky - Fuckin' Problems (ft. Drake, 2 Chainz & Kendrick Lamar).aiff"
-isrc     = ""      # none - paste a spotify url below
-spotify  = ""
-```
+so:
 
-**an empty field is an invitation.** `beatport = ""` is the worklist entry: the
-operator finds the listing, pastes the URL, re-runs. `isrc = ""` with a pasted
-spotify URL is the whole no-ISRC path (§9d). there is no separate file to
-consult and no stub to generate.
+| file             | who writes it                                     | what it is                                                                                     |
+| ---------------- | ------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `library.toml`   | the pipeline, in full, every run                  | the map and the worklist. nothing in it is authored, so it can be deleted and rebuilt exactly. |
+| `overrides.toml` | the operator, and tools appending on their behalf | assertions. read on every run, rewritten by nothing.                                           |
 
-**merge rule: the resolver never overwrites what it did not write.** the sidecar
-keeps the last value it generated per `(md5, field)`. on the next run:
+both use the same shape — one table per decoded-audio md5 (F44) — so there is
+one format to learn. **a value is an assertion because of the file it is in**,
+and nothing else: no marker to remember, no history to consult, and no way for
+an algorithm change to fake one.
 
-```text
-file value == last generated  →  resolver may refresh it
-file value != last generated  →  the operator edited it
-                                 preserve verbatim, mark provenance `manual`
-```
+the map **shows** the resolved result with assertions applied, because it is the
+view of what would actually be written. it is never the place they live.
 
-no marker to remember, no ceremony. editing a line is the act of asserting it.
-deleting a line's value reverts that field to resolver control on the next run.
+**an empty field in the map is an invitation.** `beatport = ""` is the worklist
+entry: find the listing, paste the URL into `overrides.toml`, re-run.
 
-**title/artist/album are written for legibility, not read as input.** they make
-an md5-keyed file scannable; the authoritative values live in the cache (§9a).
-the fields the resolver _reads back_ are `isrc`, the service URLs, and any direct
-field override.
-
-**it is the only hand-editable artefact in the system, and it is safe to delete.**
-regenerating costs nothing for resolved rows — they come from cached raw payloads
-(§9a) — but manual edits are lost, so the file is worth version-controlling. it is
-plain text and diffs cleanly.
+**the ISRC is asserted before the lookups, not after.** every other field is
+written once resolution is done, so overriding it late is enough — but the ISRC
+is the key the lookups are made _with_. overriding it at the end would keep the
+operator's string and none of the metadata it was supposed to unlock.
 
 ## 9c. views over the map
 

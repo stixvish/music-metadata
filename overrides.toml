@@ -1,0 +1,28 @@
+# overrides.toml — values you assert by hand.
+#
+# the pipeline reads this and never rewrites it. anything here outranks
+# every source (§9b), including the file's own tags.
+#
+# entries are keyed by audio md5; `library.toml` is the index to look them
+# up in. set only the fields you mean to assert. `file` is ignored and is
+# here so an entry says what it is.
+
+["a808a737066eb8fbcdfbe22ad46ce14b"]
+artwork  = "https://music.apple.com/us/album/checkers/1657261196?i=1657261206"
+file     = "24kGoldn - Checkers (ft. Bandmanrill).aiff"
+
+["88a0bc73ae97ee9c7744de964e5abf8e"]
+isrc     = "USRC11201220"
+file     = "A$AP Rocky - Fuckin' Problems (ft. Drake, 2 Chainz & Kendrick Lamar).aiff"
+
+["2629d40eff417684918c1e1901d02e4e"]
+isrc     = "GBARL1202144"
+file     = "Calvin Harris - Let's Go (ft. Ne-Yo) [Swanky Tunes & Hard Rock Sofa Remix].aiff"
+
+["c905eb4c6e59d2abce4b9d35a9a67ea6"]
+isrc     = "GBARL1202425"
+file     = "Calvin Harris - Sweet Nothing (ft. Florence Welch) [Diplo + Grandtheft remix].aiff"
+
+["5154f8a0e01e0dfd0cda86c43eb7ac41"]
+isrc     = "USIR20400274"
+file     = "The Killers - Mr. Brightside.aiff"

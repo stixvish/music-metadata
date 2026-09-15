@@ -223,12 +223,38 @@ Re-run the same command after that time. Nothing is lost and nothing is
 re-fetched — the request count in that message is how the budget gets measured,
 since Spotify does not publish it.
 
-The map is derived from the sidecar, so an interrupted run has not lost it
-either:
+`library.toml` is generated in full from the sidecar, so an interrupted run has
+lost nothing:
 
 ```bash
 uv run music-metadata map --regenerate
 ```
+
+Your own edits live in `overrides.toml` and are never touched by that.
+
+## the two files
+
+```text
+library.toml     generated every run · the map and the worklist · never edit it
+overrides.toml   yours · read every run · rewritten by nothing
+```
+
+Both are keyed by decoded-audio md5, so `library.toml` is the index you look a
+track up in. To assert something, copy its md5 across and set the field:
+
+```toml
+["8ab13f549542ec73ee5d8da7c62dd6a4"]
+file     = "*NSYNC - Bye Bye Bye.aiff"    # a label; ignored
+beatport = "https://www.beatport.com/track/bye-bye-bye/20819013"
+artwork  = "https://music.apple.com/us/album/checkers/1657261196?i=1657261206"
+```
+
+Anything here outranks every source, including the file's own tags. An empty
+value asserts nothing — clearing a line hands the field back to the resolver.
+
+`artwork` accepts an Apple Music link or a direct image URL, and matters because
+the iTunes _search_ index does not carry every release even when the _lookup_
+endpoint does.
 
 ## verifying a run
 
