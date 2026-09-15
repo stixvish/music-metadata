@@ -58,6 +58,27 @@ _EDITION_MARKER = re.compile(
 )
 
 
+def strip_edition(album_name: str) -> str:
+  """Remove a `(Deluxe)`-style qualifier from an album name.
+
+  **the itunes search api finds nothing for a name carrying one.** measured
+  2026-09-15:
+
+      "24kGoldn El Dorado (Deluxe)"  ->  0 results
+      "24kGoldn El Dorado"           ->  3 results, the right album first
+
+  so the qualifier has to come off before the album name is used as a search
+  term. it is kept on the tag itself — §7b chose that release deliberately.
+
+  Args:
+    album_name: the album name as the service gave it.
+
+  Returns:
+    The name with any edition qualifier removed, whitespace collapsed.
+  """
+  return " ".join(_EDITION_MARKER.sub("", album_name).split())
+
+
 @dataclass(frozen=True, slots=True)
 class ReleaseCandidate:
   """one release a recording appears on, as spotify describes it."""
