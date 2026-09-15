@@ -3,20 +3,14 @@ import pytest
 from music_metadata.library_map import (
   Entry,
   MapError,
-  merge,
   read,
+  read_overrides,
   render,
+  set_override,
   write,
 )
-from music_metadata.store import Store
 
 MD5 = "446fd65a7c0be5bd83448b5a04bb7035"
-
-
-@pytest.fixture
-def store(tmp_path):
-  with Store.open(tmp_path / "sidecar.sqlite") as s:
-    yield s
 
 
 def entry(**values):
@@ -69,119 +63,104 @@ def test_a_missing_map_reads_as_empty(tmp_path):
   assert read(tmp_path / "nope.toml") == {}
 
 
-# --- §9b's merge rule --------------------------------------------------------
+# --- the map is generated; the overrides are yours ---------------------------
+# §9b used to make one file do both jobs and decide between them by comparing
+# against what was generated last run. two measured failures ended that: an
+# algorithm change made 15 generated values look hand-typed, and regenerating
+# the file destroyed an edit that lived in it.
 
 
-def test_a_value_we_generated_is_ours_to_refresh():
-  merged = merge(
-    MD5,
-    resolved={"album": "The Real Album"},
-    on_disk={"album": "Old Album"},
-    generated={"album": "Old Album"},
-  )
-
-  assert merged.values["album"] == "The Real Album"
-  assert "album" not in merged.manual
-
-
-def test_a_value_the_operator_changed_is_preserved():
-  merged = merge(
-    MD5,
-    resolved={"album": "The Real Album"},
-    on_disk={"album": "What I Say It Is"},
-    generated={"album": "Old Album"},
-  )
-
-  assert merged.values["album"] == "What I Say It Is"
-  assert "album" in merged.manual
-
-
-def test_clearing_a_line_hands_the_field_back():
-  """§9b: deleting a line's value reverts that field to resolver control."""
-  merged = merge(
-    MD5,
-    resolved={"beatport": "https://beatport.com/track/x/1"},
-    on_disk={"beatport": ""},
-    generated={"beatport": "https://beatport.com/track/old/9"},
-  )
-
-  assert merged.values["beatport"] == "https://beatport.com/track/x/1"
-  assert "beatport" not in merged.manual
-
-
-def test_a_pasted_url_into_an_empty_field_is_an_edit():
-  """§9b: `beatport = ""` is the worklist entry — paste the URL, re-run."""
-  merged = merge(
-    MD5,
-    resolved={"beatport": ""},
-    on_disk={"beatport": "https://beatport.com/track/blessings/20819013"},
-    generated={"beatport": ""},
-  )
-
-  assert merged.values["beatport"] == "https://beatport.com/track/blessings/20819013"
-  assert "beatport" in merged.manual
-
-
-def test_a_first_run_has_nothing_to_preserve():
-  merged = merge(MD5, resolved={"album": "A"}, on_disk={}, generated={})
-
-  assert merged.values["album"] == "A"
-  assert merged.manual == frozenset()
-
-
-# --- the round trip that the rule actually has to survive --------------------
-
-
-def test_a_hand_edit_survives_a_regenerate(tmp_path, store):
+def test_the_map_is_rewritten_in_full_every_run(tmp_path):
+  """nothing in it is authored, so there is nothing to preserve."""
   path = tmp_path / "library.toml"
 
-  write(path, [merge(MD5, {"album": "Generated"}, {}, {})], store)
-  on_disk = read(path)[MD5]
-  on_disk["album"] = "Operator Says This"
-  path.write_text(render([Entry(MD5, on_disk)]))
-
-  second = merge(MD5, {"album": "Generated"}, read(path)[MD5], store.get_generated(MD5))
-  write(path, [second], store)
-
-  assert read(path)[MD5]["album"] == "Operator Says This"
-
-
-def test_an_unedited_value_still_refreshes_across_runs(tmp_path, store):
-  path = tmp_path / "library.toml"
-
-  write(path, [merge(MD5, {"album": "First"}, {}, {})], store)
-  second = merge(MD5, {"album": "Second"}, read(path)[MD5], store.get_generated(MD5))
-  write(path, [second], store)
+  write(path, [Entry(MD5, {"album": "First"})])
+  write(path, [Entry(MD5, {"album": "Second"})])
 
   assert read(path)[MD5]["album"] == "Second"
 
 
-def test_a_hand_edit_is_not_adopted_as_our_own_baseline(tmp_path, store):
-  """if an edit became the baseline, the operator's next edit would look like
-  our output and be silently overwritten."""
-  path = tmp_path / "library.toml"
-  write(path, [merge(MD5, {"album": "Generated"}, {}, {})], store)
+def test_an_assertion_is_read_back_from_the_overrides_file(tmp_path):
+  path = tmp_path / "overrides.toml"
 
-  edited = read(path)[MD5] | {"album": "Operator Says This"}
-  write(
-    path, [merge(MD5, {"album": "Generated"}, edited, store.get_generated(MD5))], store
-  )
+  set_override(path, MD5, "isrc", "GBAHT0400322")
 
-  assert store.get_generated(MD5)["album"] == "Generated"
+  assert read_overrides(path)[MD5]["isrc"] == "GBAHT0400322"
 
 
-def test_the_edit_still_holds_on_a_third_run(tmp_path, store):
-  path = tmp_path / "library.toml"
-  write(path, [merge(MD5, {"album": "Generated"}, {}, {})], store)
-  edited = read(path)[MD5] | {"album": "Mine"}
-  write(
-    path, [merge(MD5, {"album": "Generated"}, edited, store.get_generated(MD5))], store
-  )
+def test_an_absent_overrides_file_asserts_nothing(tmp_path):
+  assert read_overrides(tmp_path / "nope.toml") == {}
 
-  third = merge(MD5, {"album": "Generated"}, read(path)[MD5], store.get_generated(MD5))
-  write(path, [third], store)
 
-  assert read(path)[MD5]["album"] == "Mine"
+def test_an_empty_value_is_not_an_assertion(tmp_path):
+  """a blank line is the worklist's invitation, not a claim that it is blank."""
+  path = tmp_path / "overrides.toml"
+  path.write_text(f'["{MD5}"]\nbeatport = ""\n')
+
+  assert read_overrides(path) == {}
+
+
+def test_the_file_label_is_not_an_assertion(tmp_path):
+  """it is there so the entry says what it is, not to override the filename."""
+  path = tmp_path / "overrides.toml"
+  path.write_text(f'["{MD5}"]\nfile     = "x.aiff"\nisrc     = "GBAHT0400322"\n')
+
+  assert read_overrides(path)[MD5] == {"isrc": "GBAHT0400322"}
+
+
+def test_setting_a_second_field_keeps_the_first(tmp_path):
+  path = tmp_path / "overrides.toml"
+
+  set_override(path, MD5, "isrc", "GBAHT0400322")
+  set_override(path, MD5, "beatport", "https://beatport.com/track/x/1")
+
+  loaded = read_overrides(path)[MD5]
+  assert loaded["isrc"] == "GBAHT0400322"
+  assert loaded["beatport"] == "https://beatport.com/track/x/1"
+
+
+def test_setting_a_field_leaves_another_entry_alone(tmp_path):
+  """**this is the property that was violated.** a write for one track must
+  never be able to disturb another's."""
+  other = "b" * 32
+  path = tmp_path / "overrides.toml"
+  set_override(path, other, "beatport", "https://beatport.com/track/keep/9")
+
+  set_override(path, MD5, "isrc", "GBAHT0400322")
+
+  assert read_overrides(path)[other]["beatport"].endswith("/keep/9")
+
+
+def test_comments_in_the_overrides_file_survive_a_write(tmp_path):
+  """the operator annotates their own file; a lookup must not strip it."""
+  path = tmp_path / "overrides.toml"
+  path.write_text(f'# why this one is odd\n["{MD5}"]\nisrc     = "AAA000000001"\n')
+
+  set_override(path, MD5, "beatport", "https://beatport.com/track/x/1")
+
+  assert "# why this one is odd" in path.read_text()
+
+
+def test_rewriting_the_same_value_changes_nothing(tmp_path):
+  path = tmp_path / "overrides.toml"
+  set_override(path, MD5, "isrc", "GBAHT0400322")
+
+  assert not set_override(path, MD5, "isrc", "GBAHT0400322")
+
+
+def test_an_unknown_field_is_refused(tmp_path):
+  with pytest.raises(MapError):
+    set_override(tmp_path / "o.toml", MD5, "not_a_field", "x")
+
+
+def test_malformed_overrides_fail_loudly(tmp_path):
+  """silently ignoring a typo discards the operator's work at exactly the
+  moment they were most deliberate about it."""
+  path = tmp_path / "overrides.toml"
+  path.write_text('["' + MD5 + '"]\nisrc = "unterminated\n')
+
+  with pytest.raises(MapError):
+    read_overrides(path)
 
 
 # --- §9b vs §11a: two files can share one md5 --------------------------------

@@ -1,22 +1,26 @@
-"""`library.toml` — one map, generated and editable (SPEC.md §9b).
+"""the map and the overrides — two files, one shape (SPEC.md §9b).
 
-one entry per audio file, keyed by decoded-audio md5 (F44). it is the map, the
-override file and the worklist at once; an earlier draft split those into three
-artefacts, which meant the operator had to know which one to open.
+one entry per audio file, keyed by decoded-audio md5 (F44).
 
-**an empty field is an invitation.** `beatport = ""` is the worklist entry: find
-the listing, paste the URL, re-run.
+**`library.toml` is generated and `overrides.toml` is yours.** §9b originally
+made one file do both jobs, on the reasoning that the operator should not have
+to know which artefact to open. that reasoning was wrong, and the way it failed
+is worth keeping written down:
 
-**the resolver never overwrites what it did not write.** the sidecar keeps the
-last value it generated per `(md5, field)`:
+- telling an edit from a generated value meant remembering what was generated
+  last run, in a third place. when an *algorithm* changed — §7b's edition
+  preference — 15 album names moved and every one then read as hand-typed, and
+  would have pinned itself forever.
+- the file the operator's edits lived in was also the file the pipeline
+  rewrote. regenerating it is a normal operation, and a normal operation must
+  never be able to destroy work. it did.
 
-```text
-file value == last generated  ->  ours to refresh
-file value != last generated  ->  the operator edited it; preserve verbatim
-```
+so the split is not tidiness. **`library.toml` can be deleted at any moment and
+regenerated exactly**; nothing in it is authored. `overrides.toml` holds only
+values someone typed, and the pipeline appends to it but never rewrites it.
 
-no marker to remember and no ceremony — editing a line *is* the act of asserting
-it, and clearing a line hands the field back to the resolver.
+**an empty field in the map is an invitation.** `beatport = ""` is the worklist
+entry: find the listing, paste the URL into `overrides.toml`, re-run.
 """
 
 from __future__ import annotations
@@ -24,8 +28,6 @@ from __future__ import annotations
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
-
-from music_metadata.store import Store
 
 # the fields the map carries, in the order §9b prints them. title, artist and
 # album are written for legibility and are not read back as resolver input;
@@ -154,104 +156,104 @@ def read(path: Path) -> dict[str, dict[str, str]]:
   }
 
 
-def merge(
-  audio_md5: str,
-  resolved: dict[str, str],
-  on_disk: dict[str, str],
-  generated: dict[str, str],
-) -> Entry:
-  """Apply §9b's merge rule to one entry.
+def write(path: Path, entries: list[Entry]) -> None:
+  """Write the map.
 
-  Args:
-    audio_md5: the track's decoded-audio md5.
-    resolved: what the resolver produced this run.
-    on_disk: what the file currently holds for this track.
-    generated: what the resolver wrote for this track last run.
-
-  Returns:
-    The merged entry, naming which fields the operator asserted by hand.
-  """
-  values: dict[str, str] = {}
-  manual: set[str] = set()
-
-  for name in FIELDS:
-    current = on_disk.get(name, "")
-    last = generated.get(name, "")
-    fresh = resolved.get(name, "")
-
-    # a value that differs from what we generated was typed by the operator.
-    # an empty one is not an edit: clearing a line hands the field back.
-    if current and current != last:
-      values[name] = current
-      manual.add(name)
-    else:
-      values[name] = fresh
-
-  return Entry(audio_md5=audio_md5, values=values, manual=frozenset(manual))
-
-
-def write(path: Path, entries: list[Entry], store: Store) -> None:
-  """Write the map and record what was generated, for the next run's merge.
-
-  Only resolver-generated values are recorded. A hand-edited value is not ours
-  and must not become the baseline we later compare against, or the operator's
-  next edit would look like our own output.
+  **No merge, and no baseline to keep.** The map is generated in full every
+  run; nothing in it is authored, so there is nothing to preserve. Assertions
+  live in `overrides.toml` and are never written here.
 
   Args:
     path: the `library.toml` file.
-    entries: the merged rows.
-    store: the sidecar, which remembers what we generated.
+    entries: the rows to write.
   """
   path.write_text(render(entries))
-  for entry in entries:
-    store.put_generated(
-      entry.audio_md5,
-      {k: v for k, v in entry.values.items() if k not in entry.manual},
-    )
 
 
-def set_isrc(path: Path, audio_md5: str, isrc: str) -> bool:
-  """Write one entry's `isrc` in place, leaving the rest of the file untouched.
+OVERRIDES_HEADER = (
+  "# overrides.toml — values you assert by hand.\n"
+  "#\n"
+  "# the pipeline reads this and never rewrites it. anything here outranks\n"
+  "# every source (§9b), including the file's own tags.\n"
+  "#\n"
+  "# entries are keyed by audio md5; `library.toml` is the index to look them\n"
+  "# up in. set only the fields you mean to assert. `file` is ignored and is\n"
+  "# here so an entry says what it is.\n"
+)
 
-  **The whole file is not regenerated.** §9b's merge already preserves
-  hand-edits, but rewriting only the one line means every other edit, every
-  comment and the file's exact shape survive a lookup that touched one track —
-  which matters when the operator is working down a list of 55.
+
+def read_overrides(path: Path) -> dict[str, dict[str, str]]:
+  """Read the operator's assertions.
 
   Args:
-    path: the map file.
-    audio_md5: which entry to change.
-    isrc: the value to set.
+    path: the `overrides.toml` file.
 
   Returns:
-    True when the file was changed. False when there is no such entry, or it
-    already said this.
+    md5 to asserted fields, with empty values and the `file` label dropped. An
+    absent file is normal — an operator who has asserted nothing overrides
+    nothing.
+
+  Raises:
+    MapError: if the file exists but is not valid TOML. A typo has to fail
+      loudly: silently ignoring it would discard the operator's work at exactly
+      the moment they were most deliberate about it.
   """
   if not path.is_file():
-    return False
-  text = path.read_text()
+    return {}
+  out: dict[str, dict[str, str]] = {}
+  for md5, values in read(path).items():
+    asserted = {k: v for k, v in values.items() if v and k != "file"}
+    if asserted:
+      out[md5] = asserted
+  return out
+
+
+def set_override(path: Path, audio_md5: str, field: str, value: str) -> bool:
+  """Record one asserted value, creating the file or the entry as needed.
+
+  **Only ever adds or replaces one field.** Every other entry, every other
+  field and every comment survives byte-for-byte, because this runs while the
+  operator may be part-way through editing the same file.
+
+  Args:
+    path: the `overrides.toml` file.
+    audio_md5: which track.
+    field: which field to assert.
+    value: the value.
+
+  Returns:
+    True when the file changed.
+
+  Raises:
+    MapError: if `field` is not one the map carries.
+  """
+  if field not in FIELDS:
+    msg = f"unknown field {field!r}; expected one of {FIELDS}"
+    raise MapError(msg)
+
+  text = path.read_text() if path.is_file() else OVERRIDES_HEADER
   heading = f'["{audio_md5}"]'
+  line = f'{field:<8} = "{_escape(value)}"\n'
+
   start = text.find(heading)
   if start == -1:
-    return False
+    path.write_text(f"{text.rstrip(chr(10))}\n\n{heading}\n{line}")
+    return True
+
   end = text.find('\n["', start + 1)
   stop = end if end != -1 else len(text)
-
-  out = []
-  changed = False
-  for line in text[start:stop].splitlines(keepends=True):
-    if line.lstrip().startswith("isrc"):
-      newline = "\n" if line.endswith("\n") else ""
-      # the trailing `# not found` comment goes with the value; it is no
-      # longer true, and leaving it would read as a contradiction.
-      replacement = f'isrc     = "{isrc}"{newline}'
-      if line == replacement:
+  out: list[str] = []
+  replaced = False
+  for existing in text[start:stop].splitlines(keepends=True):
+    stripped = existing.lstrip()
+    if stripped.startswith(f"{field} ") or stripped.startswith(f"{field}="):
+      if existing.rstrip("\n") == line.rstrip("\n"):
         return False
-      out.append(replacement)
-      changed = True
-    else:
       out.append(line)
-  if not changed:
-    return False
+      replaced = True
+    else:
+      out.append(existing)
+  if not replaced:
+    out = ["".join(out).rstrip("\n") + "\n", line]
   path.write_text(text[:start] + "".join(out) + text[stop:])
   return True
