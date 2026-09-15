@@ -77,6 +77,22 @@ def _resolved_for(store: Store, probed: ProbedFile) -> Resolved:
   )
 
 
+def render_credit_from_tags(resolved: Resolved) -> str:
+  """Render the credit the resolver chose, as the review queue shows it.
+
+  Args:
+    resolved: the arbitrated result.
+
+  Returns:
+    The artist plus any featured artists carried in the title.
+  """
+  title = resolved.tags.title or ""
+  _, _, tail = title.partition("(ft. ")
+  featured = tail.partition(")")[0] if tail else ""
+  artist = resolved.tags.artist or ""
+  return f"{artist} (ft. {featured})" if featured else artist
+
+
 def _map_row(
   probed: ProbedFile,
   resolved: Resolved,
@@ -289,12 +305,22 @@ def cmd_apply(args: argparse.Namespace) -> int:
       if resolved.flags:
         existing = read_tags(probed.path)
         for flag in resolved.flags:
+          # show what the decision is actually between. for a credit
+          # disagreement the two sides often share a TPE1 and differ only in
+          # who is featured, so a bare artist field shows nothing to decide.
+          alternative = resolved.alternatives.get(flag)
+          if alternative is not None:
+            proposed = render_credit_from_tags(resolved)
+            current = alternative
+          else:
+            proposed = resolved.tags.artist or ""
+            current = existing.artist or ""
           store.put_review(
             audio_md5=probed.audio_md5,
             flag=flag,
             file=probed.path.name,
-            proposed=resolved.tags.artist or "",
-            current=existing.artist or "",
+            proposed=proposed,
+            current=current,
             source=resolved.provenance.get("artist", ""),
           )
 

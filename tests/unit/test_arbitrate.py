@@ -338,3 +338,38 @@ def test_several_composers_use_the_house_separator():
   )
 
   assert got.tags.composer == "A, B & C"
+
+
+def test_indian_scope_refuses_spotifys_artist_list():
+  """§7a / F29: spotify inverts roles on bollywood, promoting music directors.
+
+  an indian track with no musicbrainz and no filename credit is flagged rather
+  than given a list that names the wrong people.
+  """
+  got = arbitrate(
+    probed(name="Untitled.aiff", isrc="INS181801821"),
+    [cand(track_artists=("Some Music Director", "A Singer"))],
+  )
+
+  assert got.tags.artist is None
+  assert "no-performer-credit" in got.flags
+
+
+def test_western_repertoire_still_uses_spotify_as_a_fallback():
+  """applying the indian rule globally would strip real main artists."""
+  got = arbitrate(
+    probed(name="Untitled.aiff", isrc="USJI10000001"),
+    [cand(track_artists=("Metro Boomin",))],
+  )
+
+  assert got.tags.artist == "Metro Boomin"
+
+
+def test_the_losing_reading_reaches_the_review_queue():
+  got = arbitrate(
+    probed(name="A Boogie Wit da Hoodie - Chanelly (ft. Don Q).aiff"),
+    [cand(track_name="Chanelly", track_artists=("A Boogie Wit da Hoodie",))],
+    musicbrainz=Credit(main=("A Boogie Wit da Hoodie",), featured=()),
+  )
+
+  assert "Don Q" in got.alternatives[FLAG_CREDIT_DISAGREEMENT]

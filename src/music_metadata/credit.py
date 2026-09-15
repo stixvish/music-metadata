@@ -58,6 +58,27 @@ class CreditResult:
   source: str
   agrees: bool | None = None
   flags: tuple[str, ...] = ()
+  # the reading that lost, kept only on a disagreement. the review queue is
+  # useless without it: the two sides of a credit disagreement often share the
+  # same TPE1 and differ only in who is featured, so showing one side alone
+  # shows the reviewer nothing to decide between.
+  alternative: Credit | None = None
+
+
+def render_credit(main: tuple[str, ...], featured: tuple[str, ...]) -> str:
+  """Render a credit as one line, for the review queue.
+
+  Args:
+    main: main artists.
+    featured: featured artists.
+
+  Returns:
+    `Main, Artists (ft. Featured)`.
+  """
+  out = ", ".join(main)
+  if featured:
+    out += f" (ft. {', '.join(featured)})"
+  return out
 
 
 def _fold(name: str) -> str:
@@ -210,6 +231,7 @@ def resolve_credit(
       source=FROM_MUSICBRAINZ,
       agrees=False,
       flags=(FLAG_CREDIT_DISAGREEMENT,),
+      alternative=from_name,
     )
 
   if from_name.main:

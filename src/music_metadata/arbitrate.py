@@ -19,6 +19,9 @@ from dataclasses import dataclass, field, fields, replace
 from typing import Any
 
 from music_metadata.credit import (
+  FLAG_CREDIT_DISAGREEMENT,
+  in_indian_scope,
+  render_credit,
   resolve_credit,
 )
 from music_metadata.naming import (
@@ -47,6 +50,7 @@ MUSICBRAINZ = "musicbrainz"
 
 # flags raised for the review queue (§14). a flag is never a silent fallback.
 FLAG_NO_ISRC = "no-isrc"
+FLAG_NO_PERFORMER = "no-performer-credit"
 FLAG_NO_RELEASE = "no-release"
 FLAG_NO_ARTWORK = "no-artwork"
 
@@ -58,6 +62,9 @@ class Resolved:
   tags: Tags
   provenance: dict[str, str] = field(default_factory=dict)
   flags: tuple[str, ...] = ()
+  # what a flagged decision is actually between, keyed by flag. the review
+  # queue shows this rather than a bare field value.
+  alternatives: dict[str, str] = field(default_factory=dict)
 
 
 def _year_of(date: str | None) -> str | None:
@@ -142,14 +149,26 @@ def arbitrate(
 
   # §6's resolution order, gated by G6. the filename is a first-class source
   # here, not a last resort.
+  # §7a / F38: **in indian scope, spotify's artist list is not usable as a
+  # fallback.** F29 measured that it inverts roles there, promoting music
+  # directors into `artists[]` — so an indian track with no musicbrainz and no
+  # filename credit is flagged rather than given a list that names the wrong
+  # people. everywhere else a producer credited as an artist genuinely is one.
+  indian = in_indian_scope(probed.isrc, tags.genre)
+  spotify_fallback = (
+    () if indian else tuple(a for a in chosen.track_artists if a not in features)
+  )
   credit = resolve_credit(
     probed.path.stem,
     musicbrainz=musicbrainz,
     title_features=features,
-    fallback_main=tuple(a for a in chosen.track_artists if a not in features),
+    fallback_main=spotify_fallback,
   )
+  if indian and not credit.main:
+    flags.append(FLAG_NO_PERFORMER)
   features = credit.featured or features
   flags += list(credit.flags)
+  credit_alternative = credit.alternative
 
   # §7a: `artist` is main artists plus the remixer; `album artist` is main
   # artists only, never the remixer and never a feature.
@@ -209,7 +228,15 @@ def arbitrate(
   # and the track is flagged rather than given an unverified image (G5).
   flags.append(FLAG_NO_ARTWORK)
 
-  return _apply_overrides(Resolved(tags, provenance, tuple(flags)), overrides)
+  alternatives: dict[str, str] = {}
+  if credit_alternative is not None:
+    alternatives[FLAG_CREDIT_DISAGREEMENT] = render_credit(
+      credit_alternative.main, credit_alternative.featured
+    )
+
+  return _apply_overrides(
+    Resolved(tags, provenance, tuple(flags), alternatives), overrides
+  )
 
 
 def _apply_overrides(resolved: Resolved, overrides: dict[str, str]) -> Resolved:
@@ -252,6 +279,7 @@ def _apply_overrides(resolved: Resolved, overrides: dict[str, str]) -> Resolved:
     tags=replace(resolved.tags, **usable),
     provenance=provenance,
     flags=resolved.flags,
+    alternatives=resolved.alternatives,
   )
 
 

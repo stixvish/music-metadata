@@ -7,6 +7,7 @@ from music_metadata.credit import (
   FROM_MUSICBRAINZ,
   credit_from_filename,
   in_indian_scope,
+  render_credit,
   resolve_credit,
 )
 from music_metadata.sources.musicbrainz import Credit
@@ -257,3 +258,29 @@ def test_extra_musicbrainz_artists_are_a_real_disagreement():
   )
 
   assert FLAG_CREDIT_DISAGREEMENT in got.flags
+
+
+def test_a_disagreement_carries_the_losing_reading():
+  """the queue is undecidable without both sides: these two share a TPE1 and
+  differ only in who is featured."""
+  got = resolve_credit(
+    "A Boogie Wit da Hoodie - Chanelly (ft. Don Q)",
+    musicbrainz=Credit(main=("A Boogie Wit da Hoodie",), featured=()),
+  )
+
+  assert got.alternative is not None
+  assert got.alternative.featured == ("Don Q",)
+
+
+def test_agreement_carries_no_alternative():
+  got = resolve_credit(
+    "Calvin Harris - Sweet Nothing (ft. Florence Welch)",
+    musicbrainz=Credit(main=("Calvin Harris",), featured=("Florence Welch",)),
+  )
+
+  assert got.alternative is None
+
+
+def test_render_credit_puts_features_in_the_parenthetical():
+  assert render_credit(("A", "B"), ("C",)) == "A, B (ft. C)"
+  assert render_credit(("A",), ()) == "A"
