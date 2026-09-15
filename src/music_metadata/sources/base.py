@@ -45,7 +45,23 @@ QUOTA_EXCEEDED = "QUOTA_EXCEEDED"
 
 
 class SourceError(RuntimeError):
-  """raised when a source fails in a way the caller cannot treat as a miss."""
+  """raised when a source fails in a way the caller cannot treat as a miss.
+
+  carries the HTTP status when there was one, so a caller that swallows
+  failures by design can still tell *which* failure it swallowed. a tier that
+  is allowed to contribute nothing (§5) must still not be allowed to fail
+  silently and systematically.
+  """
+
+  def __init__(self, message: str, status: int | None = None) -> None:
+    """Build the error.
+
+    Args:
+      message: what went wrong.
+      status: the HTTP status, when the failure was a response.
+    """
+    super().__init__(message)
+    self.status = status
 
 
 class RateLimitedError(SourceError):
@@ -187,7 +203,7 @@ class Source:
         continue
       if response.is_error:
         msg = f"{self.name}: HTTP {response.status_code} for {path}"
-        raise SourceError(msg)
+        raise SourceError(msg, status=response.status_code)
 
       try:
         # httpx types .json() as Any; JsonValue is what it actually is.
