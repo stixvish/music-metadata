@@ -15,23 +15,23 @@ verified master).
 
 ## status
 
-**milestone 4 of 6 — beatport.** genre, BPM and key are wired in behind a
-pluggable token provider. **beatport is optional by construction** (`SPEC.md`
-§5): with no session cookie it contributes nothing, genre falls back to discogs
-and then itunes, and the run completes. that is verified, not assumed.
+**milestone 5 of 6 — the gates.** `verify` now asserts G1–G11 over an output
+tree and reports each one as a **measured number against its target**, not a
+pass/fail bit. duplicates are classified by §11a's three policies, and the diff
+screen gates `apply` behind an explicit confirmation.
 
-| thing           | state                                                       |
-| --------------- | ----------------------------------------------------------- |
-| `probe`         | 1,494 files, 1,439 with ISRC — reproduces the baseline      |
-| `resolve`       | spotify · musicbrainz · itunes · discogs · beatport         |
-| **artwork**     | verified chain, at each album's master (up to 3000²)        |
-| **genre**       | beatport → discogs `styles` → itunes                        |
-| **label**       | beatport → discogs `labels[]`                               |
-| **BPM / key**   | beatport only, key in camelot — **needs a session cookie**  |
-| artist credit   | musicbrainz joinphrases, cross-checked against the filename |
-| G6 agreement    | **90.5%** measured on all 398 featured tracks (gate: 88%)   |
-| review queue    | flagged tracks in the browser, grouped by gate              |
-| **acquisition** | **not built** — tier 0 is M6                                |
+| thing             | state                                                  |
+| ----------------- | ------------------------------------------------------ |
+| `probe`           | 1,494 files, 1,439 with ISRC — reproduces the baseline |
+| `resolve`         | spotify · musicbrainz · itunes · discogs · beatport    |
+| `diff` / `apply`  | tagged copies to an output tree; source untouched      |
+| **`verify`**      | **G1–G11, each a measured number against its target**  |
+| **duplicates**    | §11a's three classes; only class A is automatic        |
+| **artwork**       | verified chain, at each album's master (up to 3000²)   |
+| **genre / label** | beatport → discogs → itunes                            |
+| **BPM / key**     | beatport only, key in camelot — needs a cookie         |
+| review queue      | flagged tracks in the browser, grouped by gate         |
+| **acquisition**   | **not built** — tier 0 is M6                           |
 
 what is populated today: title, artist, album, album artist, release date, year,
 track number, disc number, mix name, remixer, original artist, ISRC, genre,
@@ -131,6 +131,46 @@ the date is **not** the chosen album's date. it is the earliest across all 34
 releases the ISRC appears on (F33) — the single preceded the album by two
 months, and both facts are kept.
 
+## verifying a run
+
+```sh
+# capture the source tree's checksum first, so G4 can be asserted
+BEFORE=$(uv run music-metadata checksum)
+
+uv run music-metadata resolve
+uv run music-metadata apply --out ~/Music/tagged
+uv run music-metadata verify --out ~/Music/tagged --checksum-before "$BEFORE"
+```
+
+every gate prints what it measured beside what it wanted:
+
+```text
+PASS  G1 identity                                100.0%  (target ≥95%)
+PASS  G4 non-destruction                      unchanged  (target unchanged)
+PASS  G9 no cross-recording contamination              0  (target 0)
+FAIL  G6 artist-credit agreement                  75.0%  (target ≥88%)
+```
+
+**G4 is asserted by checksum, never by inspection.** G9 has no tolerance —
+adopting another source's ISRC is a correctness failure, not a near-miss. G3,
+G5 and G10 report rather than judge, because zero beatport results and
+unverifiable artwork are both normal outcomes.
+
+## duplicates
+
+§11a defines three classes and **only one is safely automatic**:
+
+| class | test                             | policy                                            |
+| ----- | -------------------------------- | ------------------------------------------------- |
+| A     | same ISRC **and** same audio md5 | auto-resolve — byte-identical audio loses nothing |
+| B     | same ISRC, different audio       | **never auto-delete** — one of the ISRCs is wrong |
+| C     | duration disagrees with the ISRC | strip the ISRC, queue for review                  |
+
+measured on this library: **3 class A, 3 class B**. one class B pair —
+`INS181600966` — carries two entirely different songs, which is exactly why
+"keep one" is not allowed to run unattended. deletion is always to a quarantine
+directory, never `rm`.
+
 ## the web ui
 
 the ui is the primary interface (`SPEC.md` §14). it binds loopback only.
@@ -183,7 +223,7 @@ uv run pytest -q
 green — see `CLAUDE.md`.
 
 ```sh
-uv run pytest -q           # 486 tests, no network
+uv run pytest -q           # 547 tests, no network
 uv run pytest -q -m live   # hits the real spotify api
 uv run pytest -q -m slow   # probes all 1,494 files against the measured baseline
 ```
