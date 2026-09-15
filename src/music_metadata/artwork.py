@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+import struct
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -74,6 +75,35 @@ class Artwork:
   def sha256(self) -> str:
     """Hash of the fetched bytes, for the cache."""
     return hashlib.sha256(self.data).hexdigest()
+
+
+def jpeg_dimensions(data: bytes) -> tuple[int, int] | None:
+  """Read a JPEG's real pixel dimensions from its SOF marker.
+
+  This is not cosmetic. F54 measured that apple serves each album's own master
+  and silently returns that for any larger request — asking for 3000 can yield
+  1425. recording the size we *asked for* would put a false number in the cache
+  and in any later audit.
+
+  Args:
+    data: the JPEG bytes.
+
+  Returns:
+    Width and height, or None if the markers cannot be read.
+  """
+  index = 2
+  while index < len(data) - 9:
+    if data[index] != 0xFF:
+      return None
+    marker = data[index + 1]
+    if marker in (0xC0, 0xC1, 0xC2):
+      height, width = struct.unpack(">HH", data[index + 5 : index + 9])
+      return (width, height)
+    try:
+      index += 2 + struct.unpack(">H", data[index + 2 : index + 4])[0]
+    except struct.error:
+      return None
+  return None
 
 
 def _fold(text: str) -> str:
@@ -209,7 +239,10 @@ def fetch_largest(
     url = upgrade_url(artwork_url_100, size)
     data = fetch(url)
     if data is not None:
-      return (data, size, url)
+      # the real dimensions, not the requested ones — apple caps at the
+      # album's master and does so silently (F54).
+      measured = jpeg_dimensions(data)
+      return (data, measured[0] if measured else size, url)
   return None
 
 

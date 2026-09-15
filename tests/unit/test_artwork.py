@@ -253,3 +253,25 @@ def test_the_artwork_hashes_its_bytes():
   )
 
   assert len(got.sha256) == 64
+
+
+def test_the_recorded_width_is_what_came_back_not_what_was_asked_for():
+  """F54: apple caps at the album's master, so asking 3000 can yield 1425.
+
+  recording the requested size would put a false number in the cache.
+  """
+  # a minimal JPEG whose SOF0 marker declares 1425x1425.
+  import struct
+
+  sof = b"\xff\xc0" + struct.pack(">H", 17) + b"\x08" + struct.pack(">HH", 1425, 1425)
+  jpeg = b"\xff\xd8" + sof + b"\x00" * 64
+
+  data, width, _ = fetch_largest("https://i.test/100x100bb.jpg", fetch=lambda u: jpeg)
+
+  assert width == 1425
+
+
+def test_an_unreadable_jpeg_falls_back_to_the_requested_size():
+  data, width, _ = fetch_largest("https://i.test/100x100bb.jpg", fetch=lambda u: JPEG)
+
+  assert width == 3000
