@@ -30,9 +30,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from music_metadata import library_map  # noqa: E402 — needs the path above
 from music_metadata.config import DEFAULT_SIDECAR, load_env, require  # noqa: E402
-from music_metadata.dedup import DURATION_TOLERANCE_S  # noqa: E402
-from music_metadata.sources.base import SourceError  # noqa: E402
-from music_metadata.sources.musicfetch import Musicfetch, UrlMatch  # noqa: E402
+from music_metadata.isrc_recovery import Recovery, recover  # noqa: E402
+from music_metadata.sources.musicfetch import Musicfetch  # noqa: E402
 from music_metadata.store import Store  # noqa: E402
 
 
@@ -46,22 +45,20 @@ def _client() -> Musicfetch:
   return Musicfetch(require("MUSICMATCH_TOKEN"))
 
 
-def _describe(url: str, match: UrlMatch) -> str:
+def _describe(url: str, found: Recovery) -> str:
   """Render one lookup for a human.
 
   Args:
     url: what was looked up.
-    match: what came back.
+    found: what came back.
 
   Returns:
     A single line.
   """
-  if match.isrc:
-    who = ", ".join(match.artists) or "?"
-    return f"{match.isrc}  {who} — {match.name}"
-  if match.looks_like_a_video:
-    return f"no isrc — this looks like a video upload, not a track.  {url}"
-  return f"no isrc — musicfetch could not place this url.  {url}"
+  if found.usable:
+    suffix = f"  [{found.note}]" if found.note else ""
+    return f"{found.isrc}  {found.who or '?'} — {found.name}{suffix}"
+  return f"no isrc — {found.note}  {url}"
 
 
 def cmd_look(args: argparse.Namespace) -> int:
@@ -69,14 +66,9 @@ def cmd_look(args: argparse.Namespace) -> int:
   failures = 0
   try:
     for url in args.url:
-      try:
-        match = client.isrc_for_url(url)
-      except SourceError as exc:
-        print(f"FAIL  {url}: {exc}")
-        failures += 1
-        continue
-      print(_describe(url, match))
-      failures += 0 if match.isrc else 1
+      found = recover(url, client)
+      print(_describe(url, found))
+      failures += 0 if found.usable else 1
   finally:
     client.close()
   return 1 if failures else 0
@@ -123,7 +115,6 @@ def cmd_fill(args: argparse.Namespace) -> int:
       for r in store.query("SELECT audio_md5, duration_s FROM files")
     }
   client = _client()
-  text = args.map.read_text()
   written = skipped = 0
   try:
     for key, url in _pairs(args.pairs):
@@ -132,77 +123,23 @@ def cmd_fill(args: argparse.Namespace) -> int:
         print(f"SKIP  no entry for {key!r}")
         skipped += 1
         continue
-      try:
-        match = client.isrc_for_url(url)
-      except SourceError as exc:
-        print(f"FAIL  {key}: {exc}")
+      found = recover(url, client, local.get(md5))
+      if not found.usable or not found.isrc:
+        print(f"SKIP  {key}: {found.note}")
         skipped += 1
         continue
-      if not match.isrc:
-        print(f"SKIP  {key}: {_describe(url, match)}")
+      if not library_map.set_isrc(args.map, md5, found.isrc):
+        print(f"SKIP  {key}: already {rows[md5].get('isrc', '')!r}")
         skipped += 1
         continue
-
-      mine = local.get(md5)
-      if mine and match.duration_s:
-        delta = abs(match.duration_s - mine)
-        if delta > DURATION_TOLERANCE_S:
-          print(
-            f"SKIP  {key}: {match.isrc} is {match.duration_s:.0f}s but the file "
-            f"is {mine:.0f}s ({delta:.0f}s apart) — wrong track? (G10)"
-          )
-          skipped += 1
-          continue
-
-      # rewrite the one line in place, so every other hand-edit and every
-      # comment in the file survives untouched.
-      old = rows[md5].get("isrc", "")
-      needle = f'["{md5}"]'
-      start = text.index(needle)
-      end = text.find('\n["', start + 1)
-      block = text[start : end if end != -1 else len(text)]
-      updated = _set_isrc(block, match.isrc)
-      if updated == block:
-        print(f"SKIP  {key}: already {old!r}")
-        skipped += 1
-        continue
-      text = text[:start] + updated + text[end if end != -1 else len(text) :]
       written += 1
-      print(f"OK    {key}  ->  {match.isrc}")
+      note = f"  [{found.note}]" if found.note else ""
+      print(f"OK    {key}  ->  {found.isrc}{note}")
   finally:
     client.close()
 
-  if written:
-    args.map.write_text(text)
   print(f"\n{written} written to {args.map}, {skipped} skipped")
   return 0
-
-
-def _set_isrc(block: str, isrc: str) -> str:
-  """Replace the `isrc` line inside one map entry.
-
-  Args:
-    block: the entry's text, heading included.
-    isrc: the value to set.
-
-  Returns:
-    The entry with its `isrc` line rewritten, or unchanged if it already said
-    this. The trailing `# not found` comment goes with it — it is no longer
-    true.
-  """
-  out = []
-  changed = False
-  for line in block.splitlines(keepends=True):
-    if line.lstrip().startswith("isrc"):
-      newline = "\n" if line.endswith("\n") else ""
-      replacement = f'isrc     = "{isrc}"{newline}'
-      if line == replacement:
-        return block
-      out.append(replacement)
-      changed = True
-    else:
-      out.append(line)
-  return "".join(out) if changed else block
 
 
 def main() -> None:
