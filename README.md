@@ -99,7 +99,7 @@ cp .env.example .env    # then add SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET
 # 1. local tag survey. no network. ~2.5 minutes for 1,494 files.
 uv run music-metadata probe
 
-# 2. resolve identities into the sidecar. spotify at 20 req/min,
+# 2. resolve identities into the sidecar. spotify at 10 req/min,
 #    musicbrainz at 1 req/s.
 uv run music-metadata resolve --limit 20
 
@@ -130,6 +130,27 @@ a real `diff`, from the worked example in `SPEC.md` §5a:
 the date is **not** the chosen album's date. it is the earliest across all 34
 releases the ISRC appears on (F33) — the single preceded the album by two
 months, and both facts are kept.
+
+## resuming a run
+
+`resolve` caches every source's raw response separately, so a pass that stops
+part-way costs nothing to resume — re-running it skips what is already cached
+and picks up where it left off.
+
+It stops on purpose in one case. Spotify answers a 429 with a `Retry-After`
+measured in hours, not seconds (measured: 43,868s — 12.2h), which is a quota
+window rather than a throttle. Waiting it out inside the run would park the
+pass; skipping the track would be worse, because spotify is fetched first and a
+skip passes over musicbrainz, itunes and discogs too. So the pass ends and says
+when to come back:
+
+```text
+error  spotify: rate-limited for 43868s (12.2h) — stopping at track 62 of 1439.
+       everything fetched so far is cached; re-run after Tue 11:21 to resume.
+```
+
+Re-run the same command after that time. Nothing is lost and nothing is
+re-fetched.
 
 ## verifying a run
 
