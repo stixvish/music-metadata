@@ -1,8 +1,8 @@
 """who performed the track, and which of them is a feature (SPEC.md §6).
 
 the complaint, quantified: spotify flattens every contributor into one list with
-no role. **418 of 1,494 files (28%)** encode a feature in the filename and 196
-more carry multiple *main* artists, so this is not an edge case.
+no role. **398 of 1,494 files (26.6%)** encode a feature in the filename and 401
+carry a separator in the artist part, so this is not an edge case.
 
 the resolution order §6 sets out:
 
@@ -17,7 +17,9 @@ the resolution order §6 sets out:
 
 **G6 is the gate: when musicbrainz and the filename agree, the credit is
 accepted automatically; when they disagree the track is flagged for review
-rather than guessed.** the disagreement rate is reported, not assumed.
+rather than guessed.** the disagreement rate is reported, not assumed — and
+measured at **87.5%**, below the gate's 95% target, which is a fact about the
+two sources rather than a defect in this module.
 """
 
 from __future__ import annotations
@@ -74,14 +76,22 @@ def _fold(name: str) -> str:
 def _same(left: tuple[str, ...], right: tuple[str, ...]) -> bool:
   """Whether two name lists describe the same people, ignoring order.
 
+  Compares the joined form as well as the set, because a band name can itself
+  contain a separator: `Tegan & Sara` is one act, and splitting it produces
+  two names that no source will ever match. Comparing the concatenation avoids
+  having to decide, per name, whether an `&` joins two artists or belongs to
+  one — a decision neither source gives us enough to make.
+
   Args:
     left: one list.
     right: the other.
 
   Returns:
-    True when the folded name sets match.
+    True when the names describe the same people.
   """
-  return {_fold(n) for n in left} == {_fold(n) for n in right}
+  if {_fold(n) for n in left} == {_fold(n) for n in right}:
+    return True
+  return bool(left) and bool(right) and _fold("".join(left)) == _fold("".join(right))
 
 
 def credit_from_filename(stem: str) -> Credit:

@@ -165,3 +165,29 @@ def test_western_repertoire_is_out_of_scope():
 
 def test_a_genre_merely_containing_india_still_matches():
   assert in_indian_scope(None, "Indian Classical") is True
+
+
+def test_a_band_name_containing_an_ampersand_is_not_a_disagreement():
+  """`Tegan & Sara` is one act. splitting it produces two names no source
+  will match, and that is a parser artefact, not a real disagreement.
+
+  measured: this class appeared in the G6 sample at 87.5% agreement.
+  """
+  got = resolve_credit(
+    "David Guetta - Every Chance We Get We Run (ft. Tegan & Sara)",
+    musicbrainz=Credit(main=("David Guetta",), featured=("Tegan & Sara",)),
+  )
+
+  assert got.agrees is True
+
+
+def test_a_genuinely_different_name_is_still_a_disagreement():
+  """the joined-form comparison must not swallow real differences."""
+  got = resolve_credit(
+    "A Boogie Wit da Hoodie - Need a Best Friend (ft. Lil Quee & Quango Rondo)",
+    musicbrainz=Credit(
+      main=("A Boogie Wit da Hoodie",), featured=("Lil Quee", "Quango Quango")
+    ),
+  )
+
+  assert got.agrees is False
