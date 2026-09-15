@@ -1246,6 +1246,34 @@ Stree                 1755 KB   via album search
 ODYSSEY               2919 KB   via album search
 ```
 
+**F55 — the beatport session endpoint is behind cloudflare, and `cf_clearance`
+is bound to the User-Agent.** measured 2026-09-14 with a freshly exported jar:
+
+```text
+no User-Agent      HTTP 403   "Just a moment..."  (cloudflare interstitial)
+browser User-Agent HTTP 200   {"token": {"accessToken": ...}}  1147 chars
+```
+
+F6 records that cloudflare fronts the **web** host and not the API host — and
+`/api/auth/session` is on the web host, so it is challenged. the exported jar
+contains a `cf_clearance` cookie, which cloudflare issues against the browser's
+User-Agent; replaying it under a different one fails the challenge.
+
+**so the client must send a browser User-Agent**, and the export must come from
+the same browser the session was created in. this is not a workaround for a
+challenge solver (§11 rules that out) — it is replaying a clearance the operator
+already holds.
+
+the minted token measured **1147 chars** against F11's ~1156, and the session
+expiry was a month out, both as F11 describes.
+
+**the export is now one command** (`tools/bp_cookies.py export`). chrome's
+cookie store is encrypted with a macOS keychain key, and `yt-dlp` — already a
+dependency for tier 0 — decrypts it, so no keychain access is reimplemented.
+**only `beatport.com` cookies are written, `0600`**: the browser jar holds every
+site the operator is logged into, and writing all of it would turn one
+credential into dozens.
+
 **F8 — rate limits are gentler in practice than documented.**
 published Starter is 6 req/min ([musicfetch.io](https://musicfetch.io/) pricing,
 checked 2026-09-14). measured: **20 sequential requests at 1 req/s, all HTTP
