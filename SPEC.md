@@ -1598,6 +1598,37 @@ component cannot see it.** what catches it is asserting the wired behaviour —
 that a track with no itunes match still gets artwork — rather than that the
 function returns artwork when handed a URL.
 
+**F68 — musicfetch supplies the apple id automatically, and it is not safe to
+adopt.** the obvious answer to "where does the lookup id come from when the
+operator does not paste one" is musicfetch, which returns it from the ISRC:
+
+```text
+USQX92206026  ->  appleMusic.id 1657261206   (exactly the operator's link)
+USJI10000001  ->  appleMusic.id 1741747057
+```
+
+**but F34 holds, and was re-measured today.** looking those ids up and testing
+them against the release §7b chose:
+
+```text
+Bye Bye Bye  ->  'Various Artists' / 'Beach Beats'        rejected  (a compilation)
+Checkers     ->  '24kGoldn & Bandmanrill' / 'Checkers - Single'  rejected (naming)
+```
+
+the first rejection is **correct and the reason §7c verifies at all** — adopting
+it would have embedded a beach-photo compilation cover. the second is the
+verifier being stricter than it needs to be: it is the right record, named
+`Checkers - Single` where spotify says `Checkers (feat. Bandmanrill)`.
+
+so the automatic path exists but buys little: it is wrong when it disagrees, and
+rejected when it is right. **the operator's own link remains the answer for a
+release the search index does not carry**, which is why the `artwork` field
+earns its place rather than being a stopgap.
+
+musicfetch also returns `beatport.id` from the same call (`21396083` for
+`Checkers`), which is a better use of it — F9's search-derived caveat applies to
+the link, not to an ISRC-keyed id.
+
 **F66 — the itunes _lookup_ endpoint reaches releases the _search_ index does
 not carry.** the operator supplied a link for `Checkers`, which F65 had probed
 as absent from the US, CA, GB, IN and AU search indexes under every term tried:
