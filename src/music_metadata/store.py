@@ -270,6 +270,7 @@ class Store:
     self,
     isrc: str,
     source_release: str | None,
+    candidate: str | None,
     url_template: str | None,
     width: int | None,
     sha256: str | None,
@@ -280,6 +281,7 @@ class Store:
     Args:
       isrc: the recording's ISRC.
       source_release: the release §7c verified the artwork against.
+      candidate: which step of §7c's chain verified it, for G5's per-tier count.
       url_template: the URL with the size segment left substitutable.
       width: the pixel width actually fetched.
       sha256: hash of the fetched bytes.
@@ -287,15 +289,16 @@ class Store:
     """
     self.execute(
       """INSERT INTO artwork
-           (isrc, source_release, url_template, width, sha256, local_path)
-         VALUES (?, ?, ?, ?, ?, ?)
+           (isrc, source_release, candidate, url_template, width, sha256, local_path)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(isrc) DO UPDATE SET
            source_release = excluded.source_release,
+           candidate      = excluded.candidate,
            url_template   = excluded.url_template,
            width          = excluded.width,
            sha256         = excluded.sha256,
            local_path     = excluded.local_path""",
-      (isrc, source_release, url_template, width, sha256, local_path),
+      (isrc, source_release, candidate, url_template, width, sha256, local_path),
     )
 
   def put_fingerprint(self, isrc: str, chromaprint: str, duration_s: float) -> None:
@@ -393,6 +396,22 @@ class Store:
       self.execute(
         "DELETE FROM review WHERE audio_md5 = ? AND flag = ?", (audio_md5, flag)
       )
+
+  def artwork_by_candidate(self) -> dict[str, int]:
+    """Return how many covers each step of §7c's chain supplied.
+
+    G5 requires this per-tier count rather than a single total: F37 replaced one
+    candidate outright, and knowing which tier is carrying the load is what
+    makes a future change to the chain decidable.
+
+    Returns:
+      Candidate name to count.
+    """
+    rows = self.query(
+      "SELECT candidate, COUNT(*) AS n FROM artwork "
+      "WHERE candidate IS NOT NULL GROUP BY candidate ORDER BY n DESC"
+    )
+    return {r["candidate"]: int(r["n"]) for r in rows}
 
   def review_counts(self) -> dict[str, int]:
     """Return how many tracks each gate has flagged.

@@ -168,7 +168,7 @@ def _artwork_from_store(store: Store, isrc: str) -> Artwork | None:
     data=path.read_bytes(),
     mime="image/jpeg",
     width=int(rows[0]["width"] or 0),
-    candidate=rows[0]["source_release"] or "cached",
+    candidate=rows[0]["candidate"] or "cached",
     source_release=rows[0]["source_release"] or "",
     url=rows[0]["url_template"] or "",
   )
@@ -420,6 +420,7 @@ def cmd_resolve(args: argparse.Namespace) -> int:
             store.put_artwork(
               isrc=isrc,
               source_release=art.source_release,
+              candidate=art.candidate,
               url_template=art.url,
               width=art.width,
               sha256=art.sha256,

@@ -140,6 +140,7 @@ def test_artwork_row_records_provenance(store):
   store.put_artwork(
     isrc="USJI10000001",
     source_release="No Strings Attached",
+    candidate="itunes-album-search",
     url_template="https://.../{w}x{w}bb.jpg",
     width=3000,
     sha256="deadbeef",
@@ -148,6 +149,7 @@ def test_artwork_row_records_provenance(store):
 
   row = store.query("SELECT * FROM artwork")[0]
   assert row["source_release"] == "No Strings Attached"
+  assert row["candidate"] == "itunes-album-search"
   assert row["width"] == 3000
 
 
@@ -176,3 +178,28 @@ def test_raw_payload_is_stored_as_json_text(store):
 def test_unknown_service_is_rejected(store):
   with pytest.raises(ValueError, match="unknown service"):
     store.put_raw("USJI10000001", "napster", {"a": 1})
+
+
+def test_artwork_counts_per_candidate_tier(store):
+  """G5: `verify` reports the count **per candidate tier**, not one total.
+
+  F37 replaced a candidate outright; knowing which tier carries the load is
+  what makes a future change to the chain decidable.
+  """
+  for isrc, candidate in [
+    ("A", "itunes-album-search"),
+    ("B", "itunes-album-search"),
+    ("C", "itunes-song-search"),
+  ]:
+    store.put_artwork(isrc, "Album", candidate, "url", 3000, "sha", "path")
+
+  assert store.artwork_by_candidate() == {
+    "itunes-album-search": 2,
+    "itunes-song-search": 1,
+  }
+
+
+def test_artwork_with_no_candidate_is_not_counted(store):
+  store.put_artwork("A", "Album", None, "url", 3000, "sha", "path")
+
+  assert store.artwork_by_candidate() == {}

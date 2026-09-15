@@ -66,6 +66,10 @@ CREATE TABLE IF NOT EXISTS fingerprints (
 CREATE TABLE IF NOT EXISTS artwork (
   isrc           TEXT PRIMARY KEY,
   source_release TEXT,
+  -- which step of §7c's chain verified it. G5 requires `verify` to report the
+  -- count **per candidate tier**, and that is unrecoverable after the fact
+  -- from the release name alone.
+  candidate      TEXT,
   url_template   TEXT,
   width          INTEGER,
   sha256         TEXT,
