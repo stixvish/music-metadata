@@ -80,6 +80,9 @@ class Resolved:
   # what a flagged decision is actually between, keyed by flag. the review
   # queue shows this rather than a bare field value.
   alternatives: dict[str, str] = field(default_factory=dict)
+  # the cover's source url, surfaced in the map so the operator can see which
+  # one was used and replace it when none was.
+  artwork_url: str = ""
 
 
 def _year_of(date: str | None) -> str | None:
@@ -311,7 +314,14 @@ def arbitrate(
     )
 
   return _apply_overrides(
-    Resolved(tags, provenance, tuple(flags), alternatives), overrides
+    Resolved(
+      tags,
+      provenance,
+      tuple(flags),
+      alternatives,
+      artwork_url=artwork.url if artwork is not None else "",
+    ),
+    overrides,
   )
 
 
@@ -356,6 +366,7 @@ def _apply_overrides(resolved: Resolved, overrides: dict[str, str]) -> Resolved:
     provenance=provenance,
     flags=resolved.flags,
     alternatives=resolved.alternatives,
+    artwork_url=resolved.artwork_url,
   )
 
 

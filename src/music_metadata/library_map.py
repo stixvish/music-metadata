@@ -30,7 +30,20 @@ from music_metadata.store import Store
 # the fields the map carries, in the order §9b prints them. title, artist and
 # album are written for legibility and are not read back as resolver input;
 # `isrc` and the service URLs are.
-FIELDS = ("file", "title", "artist", "album", "isrc", "spotify", "itunes", "beatport")
+# `artwork` is last because it is the longest value and the least scanned —
+# it holds the cover's source url, and accepts an apple music link when the
+# itunes search index does not carry the release (measured on `Checkers`).
+FIELDS = (
+  "file",
+  "title",
+  "artist",
+  "album",
+  "isrc",
+  "spotify",
+  "itunes",
+  "beatport",
+  "artwork",
+)
 
 # what an empty value means, printed beside it so the file reads as a worklist.
 _NOT_FOUND_COMMENT = "        # not found"
