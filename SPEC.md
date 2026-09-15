@@ -1383,6 +1383,62 @@ so first-by-path would have kept every re-download and dropped every original.
 `preference_key` ranks store over rip, lossless container first, and an
 unsuffixed name over an F39 `(2)` re-download.
 
+**F58 — soundcloud is a viable acquisition source, but its recordings are
+mostly outside every identity service we have.** measured 2026-09-15.
+
+**acquisition.** `yt-dlp` (2026.08.19) ships nine soundcloud extractors and can
+fetch the uploader's **original file** — the one behind the "free download"
+button — at `quality: 10`, so `-f bestaudio` prefers it automatically. reading
+the extractor, that path requires **all three** of:
+
+```text
+downloadable        the uploader enabled the download button
+has_downloads_left  soundcloud caps free downloads per track
+authenticated       401 otherwise: "only available for registered users"
+```
+
+when any of those fails the fallback is the stream: **AAC 128/160 kbps CBR, or
+opus 64 kbps VBR**. that is _worse_ than the youtube path, so unlike tier 0
+today, **a soundcloud download is only worth taking when the original is
+available** — the stream is a downgrade, not a fallback. the operator's two
+existing files are 320 kbps mp3, consistent with an original-file download.
+
+**identity is the real problem, and it is not that the ISRC is missing.** the
+recordings do not exist:
+
+```text
+"Secondhand (Med Aven Remix)"   musicbrainz 0 real hits   itunes 0 hits
+"CHOSEN (HUGO. EDIT)"           musicbrainz 0 real hits   itunes 0 hits
+"Don Toliver, Rema - Secondhand"  musicbrainz + itunes: exact, first hit
+```
+
+an unofficial edit has no ISRC because no label ever registered it. the _source_
+recording resolves perfectly.
+
+**and musicbrainz answers wrongly rather than emptily, at full confidence:**
+
+```text
+"Secondhand Med Aven Remix"  -> [100%] Gipsy Kings — "Aven, aven"
+"CHOSEN HUGO EDIT"           -> [100%] Arena — "Chosen (edit)"
+```
+
+**the `score` is relevance, not confidence.** itunes returned zero for both,
+which is the honest answer; musicbrainz returned a 100% match to a different
+song. so **tier 0 must never take identity from a musicbrainz text search** —
+the failure mode is not "no result", it is a confident wrong one, and G9's rule
+against cross-recording contamination is exactly what it would violate. no such
+search exists in the code today (musicbrainz is ISRC-only), and it must stay
+that way.
+
+the workable model is therefore **identify the source recording, and record the
+file as a derivative of it** — not "find this recording", which has no answer.
+that is a different shape from §10's tier 0 and needs its own design.
+
+one thing soundcloud gives that no service does: **the uploader's own BPM tag**
+(measured `TBPM=95` and a malformed `TBP=139` on the operator's two files).
+§7e leaves BPM empty rather than guessing, and for an edit that nothing else
+lists, the producer's own value is the best evidence available.
+
 **F8 — rate limits are gentler in practice than documented.**
 published Starter is 6 req/min ([musicfetch.io](https://musicfetch.io/) pricing,
 checked 2026-09-14). measured: **20 sequential requests at 1 req/s, all HTTP
