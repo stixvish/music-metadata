@@ -4,6 +4,7 @@ from pathlib import Path
 from music_metadata.arbitrate import (
   FILE_TAG,
   FILENAME,
+  FLAG_NO_ARTWORK,
   FLAG_NO_ISRC,
   FLAG_NO_RELEASE,
   MANUAL,
@@ -11,9 +12,12 @@ from music_metadata.arbitrate import (
   arbitrate,
   year_of,
 )
+from music_metadata.artwork import Artwork
 from music_metadata.credit import FLAG_CREDIT_DISAGREEMENT
 from music_metadata.probe import ProbedFile
 from music_metadata.release import ReleaseCandidate
+from music_metadata.sources.discogs import DiscogsRelease
+from music_metadata.sources.itunes import ItunesRelease
 from music_metadata.sources.musicbrainz import Credit, Work
 
 
@@ -373,3 +377,66 @@ def test_the_losing_reading_reaches_the_review_queue():
   )
 
   assert "Don Q" in got.alternatives[FLAG_CREDIT_DISAGREEMENT]
+
+
+# --- M3: genre, label and verified artwork ----------------------------------
+
+
+def test_discogs_style_outranks_itunes_genre():
+  """F47: discogs `styles` is a deeper taxonomy than itunes `primaryGenreName`."""
+  got = arbitrate(
+    probed(),
+    [cand()],
+    itunes=ItunesRelease(1, "Album", "Artist", primary_genre="Dance"),
+    discogs=DiscogsRelease(1, "Album", styles=("Progressive House",)),
+  )
+
+  assert got.tags.genre == "Progressive House"
+  assert got.provenance["genre"] == "discogs"
+
+
+def test_itunes_genre_is_used_when_discogs_has_no_style():
+  got = arbitrate(
+    probed(), [cand()], itunes=ItunesRelease(1, "Album", "Artist", primary_genre="Pop")
+  )
+
+  assert got.tags.genre == "Pop"
+  assert got.provenance["genre"] == "itunes"
+
+
+def test_no_genre_source_leaves_it_empty():
+  assert arbitrate(probed(), [cand()]).tags.genre is None
+
+
+def test_the_label_comes_from_discogs():
+  got = arbitrate(
+    probed(), [cand()], discogs=DiscogsRelease(1, "A", labels=("Fly Eye",))
+  )
+
+  assert got.tags.label == "Fly Eye"
+  assert got.provenance["label"] == "discogs"
+
+
+def test_verified_artwork_is_embedded_and_attributed():
+  art = Artwork(
+    data=b"\xff\xd8bytes",
+    mime="image/jpeg",
+    width=3000,
+    candidate="itunes-album-search",
+    source_release="No Strings Attached",
+    url="https://i.test/3000x3000bb.jpg",
+  )
+
+  got = arbitrate(probed(), [cand()], artwork=art)
+
+  assert got.tags.artwork == b"\xff\xd8bytes"
+  assert got.provenance["artwork"] == "itunes-album-search"
+  assert FLAG_NO_ARTWORK not in got.flags
+
+
+def test_no_verified_artwork_flags_rather_than_substituting():
+  """G5: never replaced by an unverified image."""
+  got = arbitrate(probed(), [cand()], artwork=None)
+
+  assert got.tags.artwork is None
+  assert FLAG_NO_ARTWORK in got.flags
