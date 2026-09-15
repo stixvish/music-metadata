@@ -20,6 +20,8 @@ usage:
 """
 
 import argparse
+import base64
+import json
 import shutil
 import subprocess
 import sys
@@ -28,7 +30,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from music_metadata.sources.bp_auth import (  # noqa: E402 — needs the path above
+import httpx  # noqa: E402 — needs the path above
+
+from music_metadata.sources.bp_auth import (  # noqa: E402
+  BROWSER_USER_AGENT,
   COOKIE_FILE,
   CookieSessionProvider,
   load_netscape_cookies,
@@ -148,10 +153,56 @@ def cmd_check(_args):
     print("      the session has probably expired — re-run `export`.")
     return 1
 
+  print(f"token        minted, {len(token)} chars")
+
+  # **minting a token is not evidence the token works**, and reporting it as
+  # success is how a whole pass came back empty. a stale exported cookie mints
+  # a token missing the `openid` scope; the catalog API answers every request
+  # with 401, and the pipeline reports each one as "not on beatport". so the
+  # check asks the API the pipeline actually uses.
+  probe = httpx.get(
+    "https://api.beatport.com/v4/catalog/tracks/",
+    params={"isrc": "USQX92100617"},
+    headers={"Authorization": f"Bearer {token}", "User-Agent": BROWSER_USER_AGENT},
+    timeout=30.0,
+  )
+  if probe.status_code == httpx.codes.UNAUTHORIZED:
+    scope = _scope_of(token)
+    print(f"scope        {scope!r}")
+    print()
+    print("FAIL  the catalog API rejected the token.")
+    if "openid" not in scope:
+      print("      it is missing the `openid` scope, which means the exported")
+      print("      cookie is stale — the session token rotated since the export.")
+    print("      log in at https://www.beatport.com and re-run `export`.")
+    return 1
+  if probe.status_code != httpx.codes.OK:
+    print()
+    print(f"FAIL  the catalog API answered HTTP {probe.status_code}.")
+    return 1
+
+  print(f"scope        {_scope_of(token)!r}")
   print()
-  print(f"OK    minted a bearer token, {len(token)} chars")
+  print("OK    the catalog API accepted it and returned a track.")
   print("      beatport will contribute genre, BPM and key on the next resolve.")
   return 0
+
+
+def _scope_of(token: str) -> str:
+  """Read the scope claim out of a JWT without verifying it.
+
+  Args:
+    token: the bearer token.
+
+  Returns:
+    The scope string, or "" when it cannot be read.
+  """
+  try:
+    segment = token.split(".")[1]
+    padded = segment + "=" * (-len(segment) % 4)
+    return str(json.loads(base64.urlsafe_b64decode(padded)).get("scope", ""))
+  except (IndexError, ValueError):
+    return ""
 
 
 def cmd_path(_args):
