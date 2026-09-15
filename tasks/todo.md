@@ -194,44 +194,57 @@ branch `feat/credit`
 
 branch `feat/artwork`
 
-- [ ] **3.1 `sources/itunes.py`** — `/lookup` plus search on **both** entities.
+- [x] **3.1 `sources/itunes.py`** — `/lookup` plus search on **both** entities.
       free, no auth.
       **verify:** `trackNumber`, `discNumber`, `trackCount`, `discCount` return
       for the §5a track.
-- [ ] **3.2 `artwork.py` — the F37 chain, not §7c's.** `entity=album` →
+- [x] **3.2 `artwork.py` — the F37 chain, not §7c's.** `entity=album` →
       `entity=song` filtered on `collectionName` → spotify's ~640px image → none,
       keep existing art and flag. **no musicfetch in v1.**
       **verify:** all four rows of §7c's measured table reach 3000×3000, with
       `18 Months` resolving via `entity=song`.
-- [ ] **3.3 resolution upgrade and step-down.** rewrite the trailing
+- [x] **3.3 resolution upgrade and step-down.** rewrite the trailing
       `/{N}x{N}bb.jpg` on `artworkUrl100` to 3000²; on a non-200 or a short read
       step 3000 → 1400 → 600 rather than failing the track.
       **verify:** a simulated non-200 at 3000 lands at 1400, and the track still
       completes.
-- [ ] **3.4 the name check rejects, never coerces.** searching
+- [x] **3.4 the name check rejects, never coerces.** searching
       `Calvin Harris 18 Months` returns `96 Months` — a different record.
       **verify:** that exact query is **rejected** and the chain moves on. no
       fuzzy ratio, no "closest result wins".
-- [ ] **3.5 `sources/discogs.py`** — label (F46, via `/releases/{id}`) and a
+- [x] **3.5 `sources/discogs.py`** — label (F46, via `/releases/{id}`) and a
       `styles[0]` genre fallback (F47). two calls per track, so it runs **only
       when beatport has no listing**.
       **verify:** two calls, not more · discogs is skipped when beatport matched.
-- [ ] **3.6 G5 flags into the review queue.** when no candidate verifies, keep
+- [x] **3.6 G5 flags into the review queue.** when no candidate verifies, keep
       the existing embedded art and flag — **never** substitute an unverified
       image.
       **verify:** a track with no verifying candidate keeps its original bytes
       and appears in the queue.
-- [ ] **3.7 update `README.md`.** artwork and label now populate. record the
+- [x] **3.7 update `README.md`.** artwork and label now populate. record the
       measured G5 counts per candidate tier and the real output-tree size. note
       that v1 needs **no musicfetch token** (F36/F37).
 
-> ### checkpoint 3 — stop and review
+> ### checkpoint 3 — reviewed 2026-09-14
 >
-> G5 reported: count accepted per candidate tier, count flagged, measured
-> against §7c's 4/4-at-3000² baseline. confirm the ~3-4 GB output estimate holds
-> at library scale.
-
----
+> §7c's measured table reproduces **4/4 at 3000×3000, byte for byte**, against
+> the live API — including `18 Months`, which only the song search can reach:
+>
+> ```text
+> No Strings Attached   2256 KB   album search
+> Stree                 1755 KB   album search
+> 18 Months             2162 KB   SONG search      <- F37's case
+> ODYSSEY               2919 KB   album search
+> ```
+>
+> on a live 8-track run: **7/8 artwork verified**, 1 flagged by G5 and left with
+> its existing art. genre and label populate from discogs, falling back to
+> itunes. `~/Music/library` untouched.
+>
+> **F54 corrected the ceiling**: apple caps at each album's own master, which
+> varies — 3600² for one album, 3000² for another, and neither reaches F5's
+> stated 4500. over-asking never errors. the recorded width is now measured from
+> the JPEG rather than assumed from the request.
 
 ## M4 — beatport, isolated and optional
 

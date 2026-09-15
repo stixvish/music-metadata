@@ -18,6 +18,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field, fields, replace
 from typing import Any
 
+from music_metadata.artwork import Artwork
 from music_metadata.credit import (
   FLAG_CREDIT_DISAGREEMENT,
   in_indian_scope,
@@ -37,6 +38,8 @@ from music_metadata.release import (
   choose_release,
   earliest_release_date,
 )
+from music_metadata.sources.discogs import DiscogsRelease
+from music_metadata.sources.itunes import ItunesRelease
 from music_metadata.sources.musicbrainz import Credit, Work
 from music_metadata.tag import Tags
 
@@ -47,6 +50,8 @@ FILENAME = "filename"
 FILE_TAG = "file-tag"
 DERIVED = "derived"
 MUSICBRAINZ = "musicbrainz"
+ITUNES = "itunes"
+DISCOGS = "discogs"
 
 # flags raised for the review queue (§14). a flag is never a silent fallback.
 FLAG_NO_ISRC = "no-isrc"
@@ -89,6 +94,9 @@ def arbitrate(
   prefer_standard_edition: bool = True,
   musicbrainz: Credit | None = None,
   work: Work | None = None,
+  itunes: ItunesRelease | None = None,
+  discogs: DiscogsRelease | None = None,
+  artwork: Artwork | None = None,
 ) -> Resolved:
   """Resolve one track's tags from the sources available.
 
@@ -101,6 +109,9 @@ def arbitrate(
     musicbrainz: the joinphrase credit split, when musicbrainz has the
       recording (§6).
     work: the work's writing credits, for `TCOM` and `TEXT` (§7d).
+    itunes: the verified itunes release, for the genre fallback (§7).
+    discogs: the discogs release, for label and a deeper genre (F46/F47).
+    artwork: the artwork §7c's chain verified, if any.
 
   Returns:
     The tags to write, the per-field provenance, and any review flags.
@@ -224,9 +235,29 @@ def arbitrate(
       tags = replace(tags, lyricist=join_artists(list(work.lyricists)))
       provenance["lyricist"] = MUSICBRAINZ
 
-  # artwork is §7c's chain, which needs itunes; until then it is unresolved
-  # and the track is flagged rather than given an unverified image (G5).
-  flags.append(FLAG_NO_ARTWORK)
+  # §7 precedence for genre: beatport (M4), then discogs `styles[0]` (F47),
+  # then itunes `primaryGenreName`. discogs' taxonomy is deeper, which is why
+  # it sits above itunes rather than beside it.
+  if discogs is not None and discogs.style:
+    tags = replace(tags, genre=discogs.style)
+    provenance["genre"] = DISCOGS
+  elif itunes is not None and itunes.primary_genre:
+    tags = replace(tags, genre=itunes.primary_genre)
+    provenance["genre"] = ITUNES
+
+  # §7 precedence for label: beatport (M4), then discogs `labels[]` (F46).
+  if discogs is not None and discogs.label:
+    tags = replace(tags, label=discogs.label)
+    provenance["label"] = DISCOGS
+
+  # G5: artwork is refetched for every track, but only from a **verified**
+  # release. when nothing verifies, the existing embedded art is kept and the
+  # track is flagged — never replaced by an unverified image.
+  if artwork is not None:
+    tags = replace(tags, artwork=artwork.data, artwork_mime=artwork.mime)
+    provenance["artwork"] = artwork.candidate
+  else:
+    flags.append(FLAG_NO_ARTWORK)
 
   alternatives: dict[str, str] = {}
   if credit_alternative is not None:
